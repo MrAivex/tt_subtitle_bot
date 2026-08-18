@@ -1,0 +1,9 @@
+venv/
+venv311/
+venv312/
+__pycache__/
+*.pyc
+.env
+downloads/
+temp_sub_img/
+*.log

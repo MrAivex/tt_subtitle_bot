@@ -1,0 +1,15 @@
+python tg_bot.py
+
+
+
+
+
+
+
+postgresql+asyncpg://tt_sub_admin:675876476994@localhost:5432/subtitle_db
+CREATE USER ttbot_user WITH PASSWORD 'tt_db_eygfgdehf';
+CREATE DATABASE ttbot_db OWNER ttbot_user;
+\q
+
+ssh root@185.96.80.30
+Km8I17tBvv4v

@@ -223,15 +223,16 @@ async def cmd_setdb(message: Message):
         await message.answer("Недостаточно прав.")
         return
 
-    # Формат: /setdb user_id поле значение
     parts = message.text.split(maxsplit=3)
     if len(parts) < 4:
         await message.answer(
             "Использование:\n"
-            "/setdb <user_id> <поле> <значение>\n\n"
+            "/setdb USER_ID FIELD VALUE\n\n"
             "Доступные поля: email, active_sub, video_limit, videos_used_today, total_videos_processed"
         )
         return
+
+    # дальше без изменений
 
     user_id = int(parts[1])
     field = parts[2].lower()

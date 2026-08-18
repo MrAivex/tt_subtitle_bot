@@ -115,7 +115,7 @@ def create_rounded_rect(width: int, height: int, radius: int, color: tuple) -> I
 # ------------------------------------------------------------
 # 5. Основная функция обработки видео
 # ------------------------------------------------------------
-def process_video(input_path: str, user_id: str) -> dict:
+def process_video(input_path: str, user_id: str, is_premium: bool = False) -> dict:
     input_abs = os.path.abspath(input_path)
     video_dir = os.path.dirname(input_abs)
     base_name = os.path.splitext(os.path.basename(input_abs))[0]
@@ -267,35 +267,36 @@ def process_video(input_path: str, user_id: str) -> dict:
             })
 
         # --- Водяной знак @tg_bot (правый верхний угол, всё видео) ---
-        watermark_text = "@tt_subtitle_bot"
-        watermark_font_size = 28
-        watermark_font = ImageFont.truetype(font_path, watermark_font_size)
-        # Создаём картинку с белым текстом и чёрной обводкой, полупрозрачную
-        watermark_img = create_text_image(
-            watermark_text, watermark_font, white, None,
-            radius=0, padding=6, min_height=None,
-            stroke_width=2, stroke_fill=black_stroke
-        )
-        # Сделаем её чуть прозрачнее (альфа-канал умножим)
-        from PIL import ImageEnhance
-        alpha = watermark_img.split()[3]
-        alpha = alpha.point(lambda p: int(p * 0.6))   # 60% непрозрачности
-        watermark_img.putalpha(alpha)
-
-        watermark_png = "watermark.png"
-        watermark_png_path = os.path.join(temp_img_dir, watermark_png)
-        watermark_img.save(watermark_png_path)
-
-        # Позиция: правый верхний угол с отступом 20 пикселей
-        x_watermark = 0
-        y_watermark = video_h - watermark_img.height
-        overlays.append({
-            "start": 0.0,
-            "end": video_duration,
-            "x": x_watermark,
-            "y": y_watermark,
-            "png": watermark_png_path
-        })
+        if not is_premium:
+            watermark_text = "@tt_subtitle_bot"
+            watermark_font_size = 28
+            watermark_font = ImageFont.truetype(font_path, watermark_font_size)
+            # Создаём картинку с белым текстом и чёрной обводкой, полупрозрачную
+            watermark_img = create_text_image(
+                watermark_text, watermark_font, white, None,
+                radius=0, padding=6, min_height=None,
+                stroke_width=2, stroke_fill=black_stroke
+            )
+            # Сделаем её чуть прозрачнее (альфа-канал умножим)
+            from PIL import ImageEnhance
+            alpha = watermark_img.split()[3]
+            alpha = alpha.point(lambda p: int(p * 0.6))   # 60% непрозрачности
+            watermark_img.putalpha(alpha)
+            
+            watermark_png = "watermark.png"
+            watermark_png_path = os.path.join(temp_img_dir, watermark_png)
+            watermark_img.save(watermark_png_path)
+            
+            # Позиция: правый верхний угол с отступом 20 пикселей
+            x_watermark = 20
+            y_watermark = video_h - watermark_img.height - 20
+            overlays.append({
+                "start": 0.0,
+                "end": video_duration,
+                "x": x_watermark,
+                "y": y_watermark,
+                "png": watermark_png_path
+            })
 
         # 8. Сборка ffmpeg команды
         inputs = [base_name + ext]

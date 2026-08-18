@@ -112,6 +112,9 @@ async def handle_video(message: Message):
             )
             return
 
+        # Определяем, является ли подписка платной (не default)
+        is_premium = user.active_sub != "default"
+
         # Скачивание
         status_msg = await message.answer("Скачиваю видео...")
         file_id = message.video.file_id
@@ -124,11 +127,11 @@ async def handle_video(message: Message):
             await status_msg.edit_text(f"Не удалось скачать видео. Ошибка: {e}")
             return
 
-        # Обработка
+        # Обработка (передаём is_premium)
         await status_msg.edit_text("Расшифровываю речь и накладываю субтитры...")
         try:
             from core import process_video
-            result = await asyncio.to_thread(process_video, input_path, str(user_id))
+            result = await asyncio.to_thread(process_video, input_path, str(user_id), is_premium)
         except subprocess.CalledProcessError as e:
             ffmpeg_error = e.stderr.strip() if e.stderr else "нет подробностей"
             if len(ffmpeg_error) > 500:

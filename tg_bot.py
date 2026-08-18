@@ -17,7 +17,7 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from payments import create_payment
-from services import activate_subscription, update_user_field
+from services import activate_subscription
 from subscriptions import SUBSCRIPTIONS
 
 from database import async_session, init_db
@@ -30,6 +30,8 @@ from services import (
     check_expired_subscriptions,
     get_top_users,
     activate_subscription,
+    update_user_field,
+    get_all_user_ids,
 )
 
 load_dotenv()
@@ -267,6 +269,40 @@ async def cmd_sendmsg(message: Message):
         await message.answer(f"✅ Сообщение отправлено пользователю {user_id}.")
     except Exception as e:
         await message.answer(f"❌ Не удалось отправить: {e}")
+
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("Недостаточно прав.")
+        return
+
+    text = message.text.replace("/broadcast", "", 1).strip()
+    if not text:
+        await message.answer("Использование: /broadcast ТЕКСТ")
+        return
+
+    user_ids = await get_all_user_ids()
+    if not user_ids:
+        await message.answer("Нет пользователей для рассылки.")
+        return
+
+    success = 0
+    failed = 0
+
+    for uid in user_ids:
+        try:
+            # parse_mode=None, чтобы избежать ошибок при случайных символах
+            await bot.send_message(uid, text, parse_mode=None)
+            success += 1
+        except Exception as e:
+            failed += 1
+        await asyncio.sleep(0.05)  # щадящий режим, чтобы не превысить лимиты Telegram
+
+    await message.answer(
+        f"✅ Рассылка завершена.\n"
+        f"Успешно: {success}\n"
+        f"Ошибок: {failed}"
+    )
 
 async def handle_yookassa_webhook(request: web.Request):
     try:

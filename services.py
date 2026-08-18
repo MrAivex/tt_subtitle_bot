@@ -135,3 +135,10 @@ async def update_user_field(session: AsyncSession, user_id: int, field: str, val
     setattr(user, field, value)
     await session.commit()
     return True, f"Поле {field} обновлено для {user_id} -> {value}"
+
+async def get_all_user_ids() -> list[int]:
+    """Возвращает список всех user_id из базы данных."""
+    from database import async_session
+    async with async_session() as session:
+        result = await session.execute(select(User.user_id))
+        return result.scalars().all()

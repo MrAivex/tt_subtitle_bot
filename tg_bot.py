@@ -242,6 +242,32 @@ async def cmd_setdb(message: Message):
         success, msg = await update_user_field(session, user_id, field, value)
         await message.answer(msg if success else f"❌ {msg}")
 
+@dp.message(Command("sendmsg"))
+async def cmd_sendmsg(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("Недостаточно прав.")
+        return
+
+    # Формат: /sendmsg user_id текст сообщения
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer("Использование:\n/sendmsg USER_ID TEXT")
+        return
+
+    try:
+        user_id = int(parts[1])
+    except ValueError:
+        await message.answer("Некорректный user_id.")
+        return
+
+    text = parts[2]
+
+    try:
+        await bot.send_message(user_id, text)
+        await message.answer(f"✅ Сообщение отправлено пользователю {user_id}.")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось отправить: {e}")
+
 async def handle_yookassa_webhook(request: web.Request):
     try:
         data = await request.json()

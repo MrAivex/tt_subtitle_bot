@@ -102,3 +102,36 @@ async def get_top_users(limit: int = 20) -> list:
         )
         rows = result.all()
         return [(row.user_id, row.total_videos_processed) for row in rows]
+
+async def update_user_field(session: AsyncSession, user_id: int, field: str, value):
+    """
+    Обновляет произвольное поле пользователя по user_id.
+    Возвращает True при успехе, False при ошибке.
+    """
+    allowed_fields = {
+        "email": str,
+        "active_sub": str,
+        "video_limit": int,
+        "videos_used_today": int,
+        "total_videos_processed": int,
+    }
+    if field not in allowed_fields:
+        return False, f"Недопустимое поле. Доступно: {', '.join(allowed_fields.keys())}"
+
+    try:
+        # Преобразуем значение к нужному типу
+        if allowed_fields[field] == int:
+            value = int(value)
+        elif allowed_fields[field] == str:
+            value = str(value)
+    except (ValueError, TypeError):
+        return False, f"Неверный тип значения для поля {field}"
+
+    result = await session.execute(select(User).where(User.user_id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return False, "Пользователь не найден"
+
+    setattr(user, field, value)
+    await session.commit()
+    return True, f"Поле {field} обновлено для {user_id} -> {value}"

@@ -17,7 +17,7 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 from payments import create_payment
-from services import activate_subscription
+from services import activate_subscription, update_user_field
 from subscriptions import SUBSCRIPTIONS
 
 from database import async_session, init_db
@@ -216,6 +216,30 @@ async def cmd_top(message: Message):
     for user_id, count in top:
         lines.append(f"{count} – {user_id}")
     await message.answer("\n".join(lines))
+
+@dp.message(Command("setdb"))
+async def cmd_setdb(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("Недостаточно прав.")
+        return
+
+    # Формат: /setdb user_id поле значение
+    parts = message.text.split(maxsplit=3)
+    if len(parts) < 4:
+        await message.answer(
+            "Использование:\n"
+            "/setdb <user_id> <поле> <значение>\n\n"
+            "Доступные поля: email, active_sub, video_limit, videos_used_today, total_videos_processed"
+        )
+        return
+
+    user_id = int(parts[1])
+    field = parts[2].lower()
+    value = parts[3]
+
+    async with async_session() as session:
+        success, msg = await update_user_field(session, user_id, field, value)
+        await message.answer(msg if success else f"❌ {msg}")
 
 async def handle_yookassa_webhook(request: web.Request):
     try:

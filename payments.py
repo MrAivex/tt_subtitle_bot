@@ -4,16 +4,23 @@ from dotenv import load_dotenv
 import asyncio
 import uuid
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-Configuration.timeout = 15   # секунд
 
 load_dotenv()
 
 Configuration.account_id = os.getenv("YOOKASSA_SHOP_ID")
 Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
+
+Configuration.timeout = 15   # секунд
+
+_original_request = requests.Session.request
+def _patched_request(self, method, url, **kwargs):
+    kwargs.setdefault("timeout", 15)
+    return _original_request(self, method, url, **kwargs)
+requests.Session.request = _patched_request
 
 import asyncio
 

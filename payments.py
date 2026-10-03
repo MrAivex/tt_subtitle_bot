@@ -51,39 +51,44 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str) -> tuple[str, st
 
     idempotency_key = str(uuid.uuid4())
     logger.info(f"[PAYMENT] Создаю платёж: user={user_id}, sub={sub_id}, idem={idempotency_key}")
-
-    payment = Payment.create({
-        "amount": {
-            "value": str(sub["price"]) + ".00",
-            "currency": "RUB"
-        },
-        "confirmation": {
-            "type": "redirect",
-            "return_url": "https://t.me/tt_subtitle_bot"
-        },
-        "capture": True,
-        "description": f"Подписка {sub['name']}",
-        "metadata": {
-            "user_id": user_id,
-            "sub_id": sub_id
-        },
-        "receipt": {
-            "customer": {"email": email},
-            "items": [
-                {
-                    "description": f"Подписка {sub['name']}",
-                    "quantity": "1.00",
-                    "amount": {
-                        "value": str(sub["price"]) + ".00",
-                        "currency": "RUB"
-                    },
-                    "vat_code": 1,
-                    "payment_subject": "service",
-                    "payment_mode": "full_payment"
+    try:
+        payment = Payment.create({
+                "amount": {
+                    "value": str(sub["price"]) + ".00",
+                    "currency": "RUB"
+                },
+                "confirmation": {
+                    "type": "redirect",
+                    "return_url": "https://t.me/tt_subtitle_bot"
+                },
+                "capture": True,
+                "description": f"Подписка {sub['name']}",
+                "metadata": {
+                    "user_id": user_id,
+                    "sub_id": sub_id
+                },
+                "receipt": {
+                    "customer": {"email": email},
+                    "items": [
+                        {
+                            "description": f"Подписка {sub['name']}",
+                            "quantity": "1.00",
+                            "amount": {
+                                "value": str(sub["price"]) + ".00",
+                                "currency": "RUB"
+                            },
+                            "vat_code": 1,
+                            "payment_subject": "service",
+                            "payment_mode": "full_payment"
+                        }
+                    ]
                 }
-            ]
-        }
-    }, idempotency_key)
+            }, idempotency_key)
+        
+        logger.info(f"[PAYMENT] Успех: {payment.id}")
+        return payment.id, payment.confirmation.confirmation_url
 
-    logger.info(f"[PAYMENT] Успех: {payment.id}")
-    return payment.id, payment.confirmation.confirmation_url
+    except Exception as e:
+        logger.error(f"[PAYMENT ERROR] {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        raise

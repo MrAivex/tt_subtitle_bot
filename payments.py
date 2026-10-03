@@ -3,6 +3,7 @@ from yookassa import Configuration, Payment
 from dotenv import load_dotenv
 import asyncio
 import uuid
+import traceback
 import os
 import logging
 import requests

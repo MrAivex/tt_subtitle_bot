@@ -180,7 +180,8 @@ async def process_payment(callback_query: types.CallbackQuery, state: FSMContext
             # Email уже есть – сразу создаём платёж
             try:
                 payment_id, url = await create_payment(user_id, sub_id, user.email)
-                await callback_query.message.answer(f"Оплати подписку по ссылке:\n{url}")
+                await callback_query.message.answer(f"Оплати подписку по ссылке:\n{url}"
+                                                    "\n\n‼️ Если страница оплаты не загружается, отключите впн ‼️")
             except Exception as e:
                 await callback_query.message.answer(f"Ошибка создания платежа: {e}")
         else:

@@ -3,6 +3,7 @@ from yookassa import Configuration, Payment
 from dotenv import load_dotenv
 import asyncio
 import uuid
+import os
 import logging
 import requests
 from requests.adapters import HTTPAdapter
@@ -18,19 +19,23 @@ Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
 
 Configuration.timeout = 60   # секунд
 
-_original_request = requests.Session.request
-def _patched_request(self, method, url, **kwargs):
-    kwargs.setdefault("timeout", 60)   # увеличено с 15 до 60
-    return _original_request(self, method, url, **kwargs)
-requests.Session.request = _patched_request
+YOOKASSA_PROXY = os.getenv("YOOKASSA_PROXY") 
+
+if YOOKASSA_PROXY:
+    _original_request = requests.Session.request
+    def _patched_request(self, method, url, **kwargs):
+        if "yookassa.ru" in url:
+            kwargs.setdefault("proxies", {"https": YOOKASSA_PROXY, "http": YOOKASSA_PROXY})
+        kwargs.setdefault("timeout", 30)
+        return _original_request(self, method, url, **kwargs)
+    requests.Session.request = _patched_request
 
 _original_session_init = requests.Session.__init__
 def _patched_session_init(self, *args, **kwargs):
     _original_session_init(self, *args, **kwargs)
-    retry = Retry(total=0, connect=0, read=0)   # БЕЗ retries
-    adapter = HTTPAdapter(max_retries=retry)
-    self.mount("https://", adapter)
-    self.mount("http://", adapter)
+    retry = Retry(total=0)
+    self.mount("https://", HTTPAdapter(max_retries=retry))
+    self.mount("http://", HTTPAdapter(max_retries=retry))
 requests.Session.__init__ = _patched_session_init
 
 async def create_payment(user_id: int, sub_id: str, email: str) -> tuple[str, str]:

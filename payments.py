@@ -5,6 +5,8 @@ import asyncio
 import uuid
 import logging
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -14,15 +16,22 @@ load_dotenv()
 Configuration.account_id = os.getenv("YOOKASSA_SHOP_ID")
 Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
 
-Configuration.timeout = 15   # секунд
+Configuration.timeout = 60   # секунд
 
 _original_request = requests.Session.request
 def _patched_request(self, method, url, **kwargs):
-    kwargs.setdefault("timeout", 15)
+    kwargs.setdefault("timeout", 60)   # увеличено с 15 до 60
     return _original_request(self, method, url, **kwargs)
 requests.Session.request = _patched_request
 
-import asyncio
+_original_session_init = requests.Session.__init__
+def _patched_session_init(self, *args, **kwargs):
+    _original_session_init(self, *args, **kwargs)
+    retry = Retry(total=0, connect=0, read=0)   # БЕЗ retries
+    adapter = HTTPAdapter(max_retries=retry)
+    self.mount("https://", adapter)
+    self.mount("http://", adapter)
+requests.Session.__init__ = _patched_session_init
 
 async def create_payment(user_id: int, sub_id: str, email: str) -> tuple[str, str]:
     """Асинхронная обёртка: сам вызов ЮKassa идёт в отдельном потоке."""

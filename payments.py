@@ -2,6 +2,13 @@ import os
 from yookassa import Configuration, Payment
 from dotenv import load_dotenv
 import asyncio
+import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+Configuration.timeout = 15   # секунд
 
 load_dotenv()
 
@@ -16,11 +23,13 @@ async def create_payment(user_id: int, sub_id: str, email: str) -> tuple[str, st
 
 
 def _create_payment_sync(user_id: int, sub_id: str, email: str) -> tuple[str, str]:
-    """Синхронный вызов ЮKassa (не блокирует event loop, т.к. вызывается через to_thread)."""
     from subscriptions import get_subscription
     sub = get_subscription(sub_id)
     if sub["price"] == 0:
         raise ValueError("Нельзя создать платёж для бесплатной подписки")
+
+    idempotency_key = str(uuid.uuid4())
+    logger.info(f"[PAYMENT] Создаю платёж: user={user_id}, sub={sub_id}, idem={idempotency_key}")
 
     payment = Payment.create({
         "amount": {
@@ -53,5 +62,7 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str) -> tuple[str, st
                 }
             ]
         }
-    })
+    }, idempotency_key)
+
+    logger.info(f"[PAYMENT] Успех: {payment.id}")
     return payment.id, payment.confirmation.confirmation_url

@@ -61,7 +61,7 @@ try:
 except ImportError:
     WHISPER_DEVICE = "cpu"
 
-MODEL = WhisperModel("medium", device=WHISPER_DEVICE, compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8")
+MODEL = WhisperModel("small", device=WHISPER_DEVICE, compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8")
 
 # ------------------------------------------------------------
 # 4. Вспомогательные функции

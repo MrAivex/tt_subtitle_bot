@@ -171,27 +171,36 @@ async def cmd_pay(message: Message):
 
 @dp.callback_query(F.data.startswith("pay:"))
 async def process_payment(callback_query: types.CallbackQuery, state: FSMContext):
+    # СРАЗУ отвечаем на callback, чтобы Telegram не истёк таймаут
+    try:
+        await callback_query.answer()
+    except Exception:
+        pass
+
     sub_id = callback_query.data.split(":")[1]
     user_id = callback_query.from_user.id
 
     async with async_session() as session:
         user = await get_or_create_user(session, user_id)
+
         if user.email:
-            # Email уже есть – сразу создаём платёж
+            # Показать статус «создаю платёж», чтобы пользователь знал, что бот работает
+            status = await callback_query.message.answer("Создаю платёж, подожди 5–15 секунд...")
+
             try:
                 payment_id, url = await create_payment(user_id, sub_id, user.email)
-                await callback_query.message.answer(f"Оплати подписку по ссылке:\n{url}"
-                                                    "\n\n‼️ Если страница оплаты не загружается, отключите впн ‼️")
+                await status.edit_text(
+                    f"Оплати подписку по ссылке:\n{url}\n\n"
+                    "‼️ Если страница оплаты не загружается, отключите впн ‼️"
+                )
             except Exception as e:
-                await callback_query.message.answer(f"Ошибка создания платежа: {e}")
+                await status.edit_text(f"Ошибка создания платежа: {e}")
         else:
-            # Email нет – просим ввести, запоминая выбранную подписку
             await callback_query.message.answer(
                 "Для оплаты нужен email. Введи его сейчас (просто напиши в чат):"
             )
             await state.set_state(EmailForm.waiting_for_email)
             await state.update_data(sub_id=sub_id)
-        await callback_query.answer()
 
 @dp.message(Command("help"))
 async def cmd_help(message: Message):

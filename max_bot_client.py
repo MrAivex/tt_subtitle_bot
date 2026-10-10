@@ -66,6 +66,7 @@ class MaxBot:
             return None, None
 
     async def _upload_file(self, upload_url: str, file_path: str):
+        """Загружает файл. Возвращает token (если в ответе), либо True/False."""
         try:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 with open(file_path, "rb") as f:
@@ -74,10 +75,19 @@ class MaxBot:
                     async with session.post(upload_url, data=form) as resp:
                         body = await resp.text()
                         print(f"[MAX _upload_file] status={resp.status}, body={body[:200]}")
-                        return resp.status == 200
+                        if resp.status != 200:
+                            return None
+                        # Пробуем вытащить token из JSON-ответа
+                        try:
+                            data = await resp.json()
+                            if isinstance(data, dict) and data.get("token"):
+                                return data["token"]
+                        except Exception:
+                            pass
+                        return True   # для видео и других — просто True
         except Exception as e:
             print(f"[MAX _upload_file] {type(e).__name__}: {e}")
-            return False
+            return None
 
     async def upload_video(self, video_path: str):
         upload_url, token = await self._get_upload_url("video")
@@ -109,12 +119,16 @@ class MaxBot:
             return None
 
     async def upload_document(self, file_path: str):
-        upload_url, token = await self._get_upload_url("file")
+        upload_url, initial_token = await self._get_upload_url("file")
         if not upload_url:
             return None
-        if not await self._upload_file(upload_url, file_path):
+        result = await self._upload_file(upload_url, file_path)
+        if not result:
             return None
-        return token
+        # Для файлов MAX возвращает token из ответа на загрузку
+        if isinstance(result, str):
+            return result
+        return initial_token
 
     async def send_video(self, chat_id: int, video_path: str, caption: str = ""):
         token = await self.upload_video(video_path)

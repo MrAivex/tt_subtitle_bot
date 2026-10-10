@@ -157,7 +157,7 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
 
         # Скачивание
         try:
-            async with aiohttp.ClientSession() as session_http:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
                 async with session_http.get(video_url) as r:
                     if r.status != 200:
                         raise Exception(f"HTTP {r.status}")
@@ -357,7 +357,7 @@ async def register_webhook():
     headers = {"Authorization": MAX_TOKEN, "Content-Type": "application/json"}
     payload = {"url": MAX_WEBHOOK_URL, "event_types": ["message_created", "bot_started", "message_callback"]}
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             async with session.post(url, json=payload, headers=headers) as resp:
                 if resp.status in (200, 201):
                     print(f"✅ MAX webhook зарегистрирован: {MAX_WEBHOOK_URL}")

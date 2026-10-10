@@ -1,6 +1,7 @@
 import asyncio
 import os
 import subprocess
+import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, Message
@@ -323,6 +324,16 @@ async def handle_yookassa_webhook(request: web.Request):
             meta = payment_info.get("metadata", {})
 
             if meta.get("platform") == "max":
+            # Пересылаем вебхук на MAX-бот (порт 8081)
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        await session.post(
+                            "http://127.0.0.1:8081/yookassa-webhook-max",
+                            json=data,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        )
+                except Exception as e:
+                    print(f"[TG→MAX forward] Ошибка: {e}")
                 return web.Response(text="OK")
 
             user_id = meta.get("user_id")

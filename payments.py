@@ -39,12 +39,11 @@ def _patched_session_init(self, *args, **kwargs):
     self.mount("http://", HTTPAdapter(max_retries=retry))
 requests.Session.__init__ = _patched_session_init
 
-async def create_payment(user_id: int, sub_id: str, email: str) -> tuple[str, str]:
-    """Асинхронная обёртка: сам вызов ЮKassa идёт в отдельном потоке."""
-    return await asyncio.to_thread(_create_payment_sync, user_id, sub_id, email)
+async def create_payment(user_id: int, sub_id: str, email: str, platform: str = "tg") -> tuple[str, str]:
+    return await asyncio.to_thread(_create_payment_sync, user_id, sub_id, email, platform)
 
 
-def _create_payment_sync(user_id: int, sub_id: str, email: str) -> tuple[str, str]:
+def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = "tg") -> tuple[str, str]:
     from subscriptions import get_subscription
     sub = get_subscription(sub_id)
     if sub["price"] == 0:
@@ -66,7 +65,8 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str) -> tuple[str, st
                 "description": f"Подписка {sub['name']}",
                 "metadata": {
                     "user_id": user_id,
-                    "sub_id": sub_id
+                    "sub_id": sub_id,
+                    "platform": platform,
                 },
                 "receipt": {
                     "customer": {"email": email},

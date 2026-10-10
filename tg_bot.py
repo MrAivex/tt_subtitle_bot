@@ -321,6 +321,10 @@ async def handle_yookassa_webhook(request: web.Request):
         if event == "payment.succeeded":
             payment_info = data["object"]
             meta = payment_info.get("metadata", {})
+
+            if meta.get("platform") == "max":
+                return web.Response(text="OK")
+
             user_id = meta.get("user_id")
             sub_id = meta.get("sub_id")
 

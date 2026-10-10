@@ -18,7 +18,7 @@ class MaxBot:
         if reply_markup:
             payload["attachments"] = reply_markup
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(url, json=payload, headers=self.headers) as resp:
                     if resp.status in (200, 201):
                         data = await resp.json()
@@ -40,7 +40,7 @@ class MaxBot:
         if reply_markup:
             payload["attachments"] = reply_markup
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.put(url, json=payload, headers=self.headers) as resp:
                     return resp.status in (200, 201, 204)
         except Exception as e:
@@ -54,7 +54,7 @@ class MaxBot:
         url = f"{self.base_url}/uploads?type={media_type}"
         headers = {"Authorization": self.token, "Accept": "application/json"}
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(url, headers=headers) as resp:
                     if resp.status not in (200, 201):
                         print(f"[MAX uploads/{media_type}] {resp.status}: {await resp.text()}")
@@ -92,7 +92,7 @@ class MaxBot:
         url = f"{self.base_url}/videos/{video_token}"
         headers = {"Authorization": self.token}
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
                         print(f"[MAX get_video_url] {resp.status}: {await resp.text()}")
@@ -130,7 +130,7 @@ class MaxBot:
             "attachments": [{"type": "video", "payload": {"token": token}}]
         }
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(url, json=payload, headers=self.headers) as resp:
                     if resp.status in (200, 201):
                         data = await resp.json()
@@ -155,7 +155,7 @@ class MaxBot:
             "attachments": [{"type": "file", "payload": {"token": token}}]
         }
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(url, json=payload, headers=self.headers) as resp:
                     if resp.status in (200, 201):
                         data = await resp.json()

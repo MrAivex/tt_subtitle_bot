@@ -66,17 +66,17 @@ class MaxBot:
             return None, None
 
     async def _upload_file(self, upload_url: str, file_path: str):
-        """Загружает файл на сервер по upload_url."""
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 with open(file_path, "rb") as f:
                     form = aiohttp.FormData()
                     form.add_field("data", f, filename=os.path.basename(file_path))
                     async with session.post(upload_url, data=form) as resp:
                         body = await resp.text()
+                        print(f"[MAX _upload_file] status={resp.status}, body={body[:200]}")
                         return resp.status == 200
         except Exception as e:
-            print(f"[MAX _upload_file] {e}")
+            print(f"[MAX _upload_file] {type(e).__name__}: {e}")
             return False
 
     async def upload_video(self, video_path: str):

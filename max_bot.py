@@ -191,7 +191,14 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
         sent = await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
 
         if result.get("srt_path"):
-            await bot.send_document(chat_id, result["srt_path"], caption="📄 Файл субтитров")
+            srt_path = result["srt_path"]
+            # MAX не принимает .srt — переименуем в .txt
+            txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
+            try:
+                os.rename(srt_path, txt_path)
+            except Exception:
+                txt_path = srt_path
+            await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
 
         if not is_admin:
             await increment_video_counter(user, session)

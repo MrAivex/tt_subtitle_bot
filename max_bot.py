@@ -381,6 +381,7 @@ async def main():
     # Веб-сервер
     app = web.Application()
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
+    app.router.add_post("/yookassa-webhook", handle_yookassa_webhook_max)
     app.router.add_post("/yookassa-webhook-max", handle_yookassa_webhook_max)
     runner = web.AppRunner(app)
     await runner.setup()

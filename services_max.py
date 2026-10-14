@@ -61,13 +61,24 @@ async def activate_subscription(session: AsyncSession, user_id: int, sub_id: str
     user = result.scalar_one_or_none()
     if not user:
         return None
+
     duration = sub.get("duration_days", 0)
-    expiry = datetime.now() + timedelta(days=duration) if duration > 0 else None
+    now = datetime.now()
+
+    # Если у пользователя уже есть активная подписка — продлеваем её.
+    # Иначе считаем от текущего момента.
+    base_date = now
+    if user.subscription_expiry and user.subscription_expiry > now:
+        base_date = user.subscription_expiry
+
+    expiry = base_date + timedelta(days=duration) if duration > 0 else None
+
     user.active_sub = sub_id
     user.video_limit = sub["video_limit"]
     user.videos_used_today = 0
     user.subscription_expiry = expiry
     await session.commit()
+
     return {
         "sub_name": sub["name"],
         "expiry": expiry.strftime("%d.%m.%Y %H:%M") if expiry else "навсегда",
@@ -130,3 +141,20 @@ async def get_all_user_ids():
     async with async_session_max() as session:
         result = await session.execute(select(UserMax.user_id))
         return result.scalars().all()
+
+async def get_users_stats():
+    """Возвращает (всего_пользователей, с_активной_подпиской, с_почтой)."""
+    from database_max import async_session_max
+    from sqlalchemy import func
+    async with async_session_max() as session:
+        total = (await session.execute(select(func.count(UserMax.user_id)))).scalar() or 0
+
+        paid = (await session.execute(
+            select(func.count(UserMax.user_id)).where(UserMax.active_sub != DEFAULT_SUB)
+        )).scalar() or 0
+
+        with_email = (await session.execute(
+            select(func.count(UserMax.user_id)).where(UserMax.email.isnot(None))
+        )).scalar() or 0
+
+        return total, paid, with_email

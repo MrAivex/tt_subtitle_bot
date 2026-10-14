@@ -21,6 +21,7 @@ from services_max import (
     activate_subscription,
     update_user_field,
     get_all_user_ids,
+    get_users_stats,
 )
 from subscriptions import SUBSCRIPTIONS
 from payments import create_payment
@@ -242,6 +243,7 @@ async def handle_max_webhook(request: web.Request):
             if text.startswith("/start"):
                 await handle_start(chat_id, user_id)
                 return web.Response(text="OK")
+            
             if text.startswith("/help"):
                 await bot.send_message(
                     chat_id,
@@ -254,6 +256,22 @@ async def handle_max_webhook(request: web.Request):
                     reply_markup=main_menu_kb()
                 )
                 return web.Response(text="OK")
+
+            if text.startswith("/stats"):
+                if user_id not in ADMIN_IDS:
+                    await bot.send_message(chat_id, "Недостаточно прав.")
+                    return web.Response(text="OK")
+                
+                total, paid, with_email = await get_users_stats()
+                await bot.send_message(
+                    chat_id,
+                    f"📊 *Статистика MAX-бота:*\n\n"
+                    f"👥 Всего пользователей: {total}\n"
+                    f"💎 С активной подпиской: {paid}\n"
+                    f"📧 С указанным email: {with_email}"
+                )
+                return web.Response(text="OK")
+            
             if text.startswith("/email"):
                 await handle_ask_email(chat_id)
                 return web.Response(text="OK")

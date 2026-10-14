@@ -195,6 +195,8 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
                 await bot.edit_message(chat_id, status_id, f"❌ Ошибка ffmpeg:\n{err}")
             return
         except Exception as e:
+            print(f"[PROCESS VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
+            traceback.print_exc()
             if status_id:
                 await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {e}")
             return

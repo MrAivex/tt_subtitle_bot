@@ -74,9 +74,8 @@ class MaxBot:
                     form.add_field("data", f, filename=os.path.basename(file_path))
                     async with session.post(upload_url, data=form) as resp:
                         body = await resp.text()
-                        print(f"[MAX _upload_file] status={resp.status}, body={body[:200]}")
                         if resp.status != 200:
-                            return None
+                            print(f"[MAX _upload_file ERROR] status={resp.status}, body={body[:200]}", flush=True)
                         # Пробуем вытащить token из JSON-ответа
                         try:
                             data = await resp.json()

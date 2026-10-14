@@ -1,6 +1,7 @@
 import asyncio
 import os
 import subprocess
+import traceback
 import uuid
 import aiohttp
 from aiohttp import web
@@ -176,8 +177,10 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
                     with open(input_path, "wb") as f:
                         f.write(await r.read())
         except Exception as e:
+            print(f"[VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
+            traceback.print_exc()
             if status_id:
-                await bot.edit_message(chat_id, status_id, f"❌ Не удалось скачать видео: {e}")
+                await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {e}")
             return
 
         # Обработка

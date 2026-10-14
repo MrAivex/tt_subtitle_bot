@@ -27,6 +27,14 @@ from subscriptions import SUBSCRIPTIONS
 from payments import create_payment
 from max_bot_client import MaxBot
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 load_dotenv()
 MAX_TOKEN = os.getenv("MAX_BOT_TOKEN")
 MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL")   # https://subtitle-bot.ru/max-webhook

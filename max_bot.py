@@ -138,7 +138,7 @@ async def handle_pay(chat_id: int, user_id: int, sub_id: str):
             await bot.send_message(chat_id, f"❌ Ошибка: {e}")
 
 
-async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
+async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
     """Получает URL видео по токену, скачивает и обрабатывает."""
     is_admin = user_id in ADMIN_IDS
 
@@ -157,8 +157,17 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
 
         status_id = await bot.send_message(chat_id, "📥 Готовлю видео к скачиванию...")
 
-        # Получаем URL по токену
-        video_url = await bot.get_video_url(video_token)
+        # Защита по размеру
+        size = att.get("size") or 0
+        if size and size > 2_500_000_000:
+            if status_id:
+                await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
+            return
+
+        # У file прямая ссылка уже есть; у video получаем по токену
+        video_url = att.get("url")
+        if not video_url and att.get("token"):
+            video_url = await bot.get_video_url(att["token"])
         if not video_url:
             if status_id:
                 await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
@@ -230,21 +239,22 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
 
 
 async def handle_find_highlights_start(chat_id: int, user_id: int):
-    """Запускает процесс поиска хайлайтов."""
+    from highlight_states import set_awaiting_video
+    set_awaiting_video(user_id, chat_id)
     await bot.send_message(
         chat_id,
         "🎬 *Поиск хайлайтов*\n\n"
-        "Отправь мне видео (до 2 часов), и я найду самые крутые моменты!\n\n"
-        "⏱️ Сканирование займёт 3-5 минут."
+        "Отправь мне видео (до 2 часов, до 2.5 ГБ) — я найду самые крутые моменты!\n\n"
+        "💡 Лучше отправляй как ФАЙЛ (скрепка → файл) — тогда без сжатия.\n"
+        "⏱️ Сканирование займёт 2-4 минуты."
     )
 
-async def handle_scan_video(chat_id: int, user_id: int, video_token: str):
-    """Сканирует видео и находит интересные моменты."""
+async def handle_scan_video(chat_id: int, user_id: int, att: dict):
+    """Этап 1: скачивает видео и быстро ищет крутые моменты (без Whisper)."""
     is_admin = user_id in ADMIN_IDS
 
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
-
         if not is_admin and not can_process_video(user):
             await bot.send_message(
                 chat_id,
@@ -252,6 +262,66 @@ async def handle_scan_video(chat_id: int, user_id: int, video_token: str):
                 "Возвращайся завтра или оформи подписку через /pay."
             )
             return
+
+    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
+
+    # Защита по размеру: не забиваем диск 60 ГБ
+    size = att.get("size") or 0
+    if size and size > 2_500_000_000:
+        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
+        return
+
+    # У file прямая ссылка уже есть в обновлении; у video получаем по токену
+    video_url = att.get("url")
+    if not video_url and att.get("token"):
+        video_url = await bot.get_video_url(att["token"])
+    if not video_url:
+        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
+        return
+
+    os.makedirs("downloads", exist_ok=True)
+    input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+
+    try:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
+            async with session_http.get(video_url) as r:
+                if r.status != 200:
+                    raise Exception(f"HTTP {r.status}")
+                with open(input_path, "wb") as f:
+                    f.write(await r.read())
+    except Exception as e:
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
+        return
+
+    await bot.edit_message(chat_id, status_id, "🔍 Сканирую на крутые моменты (2-4 минуты)...")
+
+    try:
+        from core import scan_video_for_highlights
+        result = await asyncio.to_thread(scan_video_for_highlights, input_path, 5)
+    except Exception as e:
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {e}")
+        return
+
+    moments = result.get("moments", [])
+    if not moments:
+        await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        return
+
+    from highlight_states import set_awaiting_selection
+    set_awaiting_selection(user_id, chat_id, input_path, moments)
+
+    lines = ["🎬 *Нашёл крутые моменты!*\n"]
+    for i, m in enumerate(moments, 1):
+        s, e = m["start"], m["end"]
+        lines.append(f"*{i}.* {int(s//60)}:{int(s%60):02d} – {int(e//60)}:{int(e%60):02d} ({int(e-s)} сек, громкость x{m['energy']})")
+    lines.append("\nКакие моменты нарезать с субтитрами?")
+    lines.append("Напиши номера через запятую (например: 1, 3)")
+    lines.append("/cancel — отмена.")
+
+    await bot.edit_message(chat_id, status_id, "\n".join(lines))
+    
 
     status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
 
@@ -406,6 +476,35 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
         await bot.edit_message(chat_id, status_id, "✅ Готово!")
 
 
+def extract_video_attachment(attachments: list):
+    """Ищет видео среди вложений type=video и type=file (файл без сжатия)."""
+    for att in attachments:
+        t = str(att.get("type", "")).lower()
+        payload = att.get("payload") or {}
+
+        if t == "video":
+            if payload.get("token") or payload.get("url"):
+                return {
+                    "kind": "video",
+                    "token": payload.get("token"),
+                    "url": payload.get("url"),
+                    "filename": payload.get("filename"),
+                    "size": payload.get("size"),
+                }
+
+        if t == "file":
+            name = str(payload.get("filename") or "").lower()
+            if name.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
+                return {
+                    "kind": "file",
+                    "token": payload.get("token"),
+                    "url": payload.get("url"),   # прямая ссылка прямо из обновления
+                    "filename": payload.get("filename"),
+                    "size": payload.get("size"),
+                }
+    return None
+
+
 # ------------------------------------------------------------
 # Вебхук-обработчик MAX
 # ------------------------------------------------------------
@@ -478,42 +577,34 @@ async def handle_max_webhook(request: web.Request):
                 return web.Response(text="OK")
             
 
-            # Проверяем состояние пользователя (выбор моментов)
-            from highlight_states import get_state
-            if get_state(user_id) and text:
+                        # --- Хайлайты: пользователь выбирает моменты номерами ---
+            from highlight_states import get_state, clear_state
+            state = get_state(user_id)
+            if state and state["stage"] == "awaiting_selection" and text:
                 asyncio.create_task(handle_select_moments(chat_id, user_id, text))
                 return web.Response(text="OK")
 
-            # Видео?
-            video_token = None
-            for att in attachments:
-                att_type = str(att.get("type", "")).lower()
+            # --- Видео: ловим и type=video, и type=file ---
+            att_info = extract_video_attachment(attachments)
+            if attachments and not att_info:
+                print("[MAX] attachments:", attachments, flush=True)  # дебаг структуры
 
-                # Видео как тип "video"
-                if att_type == "video":
-                    video_token = (att.get("payload") or {}).get("token")
-                    if video_token:
-                        break
-                
-                # Видео как файл (без сжатия)
-                if att_type == "file":
-                    payload = att.get("payload", {})
-                    mime = (payload.get("mime_type") or "").lower()
-                    # Проверяем, что это видео
-                    if mime.startswith("video/") or any(ext in (payload.get("filename") or "").lower() 
-                                                        for ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]):
-                        video_token = payload.get("token")
-                        if video_token:
-                            break
-
-            if video_token:
-                # Проверяем, есть ли активный процесс поиска хайлайтов
-                if get_state(user_id):
-                    # Пользователь отправил видео в процессе поиска хайлайтов
-                    asyncio.create_task(handle_scan_video(chat_id, user_id, video_token))
+            if att_info:
+                stage = state["stage"] if state else None
+                if stage == "awaiting_selection":
+                    # прислал новое видео прямо во время выбора — начинаем скан заново
+                    old = get_state(user_id)
+                    clear_state(user_id)
+                    if old and os.path.exists(old.get("video_path", "")):
+                        try:
+                            os.remove(old["video_path"])
+                        except Exception:
+                            pass
+                    stage = "awaiting_video"
+                if stage == "awaiting_video":
+                    asyncio.create_task(handle_scan_video(chat_id, user_id, att_info))
                 else:
-                    # Обычная обработка видео
-                    asyncio.create_task(handle_video_by_token(chat_id, user_id, video_token))
+                    asyncio.create_task(handle_video_by_token(chat_id, user_id, att_info))
                 return web.Response(text="OK")
 
             

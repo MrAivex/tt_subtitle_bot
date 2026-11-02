@@ -1,14 +1,19 @@
 # highlight_states.py
-"""Хранит временное состояние пользователей в процессе поиска хайлайтов."""
+"""Временные состояния пользователей в процессе поиска хайлайтов."""
 
-# {user_id: {"video_path": str, "moments": list, "chat_id": int}}
 _user_states = {}
 
-def set_state(user_id: int, chat_id: int, video_path: str, moments: list):
+def set_awaiting_video(user_id: int, chat_id: int):
+    """Пользователь нажал 'Найти хайлайты', ждём от него видео."""
+    _user_states[user_id] = {"stage": "awaiting_video", "chat_id": chat_id}
+
+def set_awaiting_selection(user_id: int, chat_id: int, video_path: str, moments: list):
+    """Скан готов, ждём выбор моментов номерами."""
     _user_states[user_id] = {
+        "stage": "awaiting_selection",
         "chat_id": chat_id,
         "video_path": video_path,
-        "moments": moments
+        "moments": moments,
     }
 
 def get_state(user_id: int):

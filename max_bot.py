@@ -482,26 +482,21 @@ def extract_video_attachment(attachments: list):
         t = str(att.get("type", "")).lower()
         payload = att.get("payload") or {}
 
+        # MAX кладёт filename/size то в payload, то рядом — читаем отовсюду
+        name = str(payload.get("filename") or att.get("filename") or "").lower()
+        size = payload.get("size") or att.get("size") or 0
+        url = payload.get("url")
+        token = payload.get("token")
+
         if t == "video":
-            if payload.get("token") or payload.get("url"):
-                return {
-                    "kind": "video",
-                    "token": payload.get("token"),
-                    "url": payload.get("url"),
-                    "filename": payload.get("filename"),
-                    "size": payload.get("size"),
-                }
+            if token or url:
+                return {"kind": "video", "token": token, "url": url,
+                        "filename": name, "size": size}
 
         if t == "file":
-            name = str(payload.get("filename") or "").lower()
             if name.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
-                return {
-                    "kind": "file",
-                    "token": payload.get("token"),
-                    "url": payload.get("url"),   # прямая ссылка прямо из обновления
-                    "filename": payload.get("filename"),
-                    "size": payload.get("size"),
-                }
+                return {"kind": "file", "token": token, "url": url,
+                        "filename": name, "size": size}
     return None
 
 

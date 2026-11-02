@@ -202,7 +202,7 @@ async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
         try:
             from core import get_video_duration
             dur = await asyncio.to_thread(get_video_duration, input_path)
-            if dur > MAX_FULL_VIDEO_SEC and not is_admin:
+            if dur > MAX_FULL_VIDEO_SEC:
                 if status_id:
                     await bot.edit_message(
                         chat_id, status_id,
@@ -295,13 +295,11 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
 
     status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
 
-    # Защита по размеру: не забиваем диск 60 ГБ
     size = att.get("size") or 0
     if size and size > 2_500_000_000:
         await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
         return
 
-    # У file прямая ссылка уже есть в обновлении; у video получаем по токену
     video_url = att.get("url")
     if not video_url and att.get("token"):
         video_url = await bot.get_video_url(att["token"])
@@ -318,7 +316,8 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
                 if r.status != 200:
                     raise Exception(f"HTTP {r.status}")
                 with open(input_path, "wb") as f:
-                    f.write(await r.read())
+                    async for chunk in r.content.iter_chunked(1024 * 1024):
+                        f.write(chunk)
     except Exception as e:
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
         return
@@ -351,72 +350,6 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
     lines.append("/cancel — отмена.")
 
     await bot.edit_message(chat_id, status_id, "\n".join(lines))
-    
-
-    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
-
-    video_url = await bot.get_video_url(video_token)
-    if not video_url:
-        if status_id:
-            await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
-        return
-
-    os.makedirs("downloads", exist_ok=True)
-    input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
-
-    try:
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
-            async with session_http.get(video_url) as r:
-                if r.status != 200:
-                    raise Exception(f"HTTP {r.status}")
-                with open(input_path, "wb") as f:
-                    f.write(await r.read())
-    except Exception as e:
-        if status_id:
-            await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
-        return
-
-    if status_id:
-        await bot.edit_message(chat_id, status_id, "🔍 Сканирую видео на крутые моменты (это займёт 3-5 минут)...")
-
-    try:
-        from core import scan_video_for_highlights
-        result = await asyncio.to_thread(scan_video_for_highlights, input_path, max_moments=5)
-    except Exception as e:
-        if status_id:
-            await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {e}")
-        return
-
-    moments = result.get("moments", [])
-    if not moments:
-        if status_id:
-            await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        return
-
-    # Сохраняем состояние
-    from highlight_states import set_state
-    set_state(user_id, chat_id, input_path, moments)
-
-    # Формируем сообщение со списком моментов
-    lines = ["🎬 *Нашёл крутые моменты!*\n"]
-    for i, m in enumerate(moments, 1):
-        start_min = int(m["start"] // 60)
-        start_sec = int(m["start"] % 60)
-        end_min = int(m["end"] // 60)
-        end_sec = int(m["end"] % 60)
-        duration = int(m["end"] - m["start"])
-        lines.append(f"*{i}.* {start_min}:{start_sec:02d} - {end_min}:{end_sec:02d} ({duration} сек)")
-
-    lines.append("\nКакие моменты нарезать с субтитрами?")
-    lines.append("Напиши номера через запятую (например: 1, 3, 5)")
-    lines.append("Или отправь /cancel для отмены.")
-
-    if status_id:
-        await bot.edit_message(chat_id, status_id, "\n".join(lines))
-    else:
-        await bot.send_message(chat_id, "\n".join(lines))
 
 async def handle_select_moments(chat_id: int, user_id: int, text: str):
     """Обрабатывает выбор моментов пользователем."""

@@ -56,6 +56,8 @@ if admin_ids_str:
 
 bot = MaxBot(MAX_TOKEN)
 scheduler = AsyncIOScheduler()
+PROCESS_LOCK = asyncio.Lock()     # тяжёлая обработка только по одной: os.chdir в core не потокобезопасен
+MAX_FULL_VIDEO_SEC = 30 * 60  
 moscow_tz = timezone("Europe/Moscow")
 
 
@@ -195,12 +197,39 @@ async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
                 await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {e}")
             return
 
+
+                # Защита сервера: длинные видео — только через поиск хайлайтов
+        try:
+            from core import get_video_duration
+            dur = await asyncio.to_thread(get_video_duration, input_path)
+            if dur > MAX_FULL_VIDEO_SEC and not is_admin:
+                if status_id:
+                    await bot.edit_message(
+                        chat_id, status_id,
+                        "⏱ Видео длиннее 30 минут — полное субтитрирование займёт часы.\n"
+                        "Нажми «🎬 Найти хайлайты» и отправь это видео ещё раз: "
+                        "я найду лучшие моменты и нарежу клипы с субтитрами."
+                    )
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+                return
+        except Exception:
+            pass
+        
+
         # Обработка
         if status_id:
             await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео...")
         try:
             from core import process_video
-            result = await asyncio.to_thread(process_video, input_path, str(user_id), is_premium)
+            if PROCESS_LOCK.locked() and status_id:
+                await bot.edit_message(chat_id, status_id, "⏳ В очереди: сначала доделаю другое видео...")
+            await PROCESS_LOCK.acquire()
+            try:
+                result = await asyncio.to_thread(process_video, input_path, str(user_id), is_premium)
+            finally:
+                PROCESS_LOCK.release()
+
         except subprocess.CalledProcessError as e:
             err = (e.stderr or "")[:500]
             if status_id:
@@ -435,6 +464,9 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
     from core import process_video, cut_clip
     clips = []
 
+    await PROCESS_LOCK.acquire()
+
+
     try:
         for idx in valid_indices:
             moment = moments[idx]
@@ -458,6 +490,9 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
         if os.path.exists(state["video_path"]):
             os.remove(state["video_path"])
         return
+
+    finally:
+        PROCESS_LOCK.release()
 
     # Отправляем клипы
     if status_id:

@@ -488,10 +488,23 @@ async def handle_max_webhook(request: web.Request):
             video_token = None
             for att in attachments:
                 att_type = str(att.get("type", "")).lower()
+
+                # Видео как тип "video"
                 if att_type == "video":
                     video_token = (att.get("payload") or {}).get("token")
                     if video_token:
                         break
+                
+                # Видео как файл (без сжатия)
+                if att_type == "file":
+                    payload = att.get("payload", {})
+                    mime = (payload.get("mime_type") or "").lower()
+                    # Проверяем, что это видео
+                    if mime.startswith("video/") or any(ext in (payload.get("filename") or "").lower() 
+                                                        for ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]):
+                        video_token = payload.get("token")
+                        if video_token:
+                            break
 
             if video_token:
                 # Проверяем, есть ли активный процесс поиска хайлайтов

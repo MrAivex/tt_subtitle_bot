@@ -186,7 +186,8 @@ async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
                     if r.status != 200:
                         raise Exception(f"HTTP {r.status}")
                     with open(input_path, "wb") as f:
-                        f.write(await r.read())
+                        async for chunk in r.content.iter_chunked(1024 * 1024):
+                            f.write(chunk)
         except Exception as e:
             print(f"[VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
             traceback.print_exc()

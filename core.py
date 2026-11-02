@@ -64,7 +64,15 @@ try:
 except ImportError:
     WHISPER_DEVICE = "cpu"
 
-MODEL = WhisperModel("small", device=WHISPER_DEVICE, compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8")
+MODEL = None
+
+def get_model():
+    """Грузит Whisper только при первом использовании — скан хайлайтов не тащит модель в RAM."""
+    global MODEL
+    if MODEL is None:
+        MODEL = WhisperModel("small", device=WHISPER_DEVICE,
+                             compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8")
+    return MODEL
 
 # ------------------------------------------------------------
 # 4. Вспомогательные функции
@@ -144,7 +152,7 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
                        check=True, capture_output=True, text=True)
 
         # 2. Распознавание с word timestamps
-        segments, _ = MODEL.transcribe(audio_file, language="ru", word_timestamps=True)
+        segments, _ = get_model().transcribe(audio_file, language="ru", word_timestamps=True)
         seg_list = list(segments)
 
         # 3. SRT для пользователя
@@ -367,21 +375,32 @@ def find_energy_peaks(audio_path: str, frame_sec: float = 0.5,
                       threshold_percentile: float = 90,
                       min_peak_sec: float = 2.0,
                       merge_gap_sec: float = 3.0) -> list:
-    """
-    Ищет громкие моменты (крики, смех, выстрелы) по энергии звука.
-    Работает за секунды даже на часовом стриме.
-    """
+    """Ищет громкие моменты по энергии звука. Читает файл чанками — бережёт RAM."""
     with wave.open(audio_path, "rb") as wf:
         sr = wf.getframerate()
-        raw = wf.readframes(wf.getnframes())
-    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        frame_len = int(sr * frame_sec)
+        block_frames = sr * 600  # куски по 10 минут
+        rms_list = []
+        leftover = np.empty(0, dtype=np.float32)
 
-    frame_len = int(sr * frame_sec)
-    n_frames = len(samples) // frame_len
-    if n_frames == 0:
+        while True:
+            raw = wf.readframes(block_frames)
+            if not raw:
+                break
+            a = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            if leftover.size:
+                a = np.concatenate([leftover, a])
+            n = len(a) // frame_len
+            if n:
+                fr = a[:n * frame_len].reshape(n, frame_len)
+                rms_list.append(np.sqrt(np.einsum('ij,ij->i', fr, fr) / frame_len))
+                leftover = a[n * frame_len:]
+            else:
+                leftover = a
+
+    if not rms_list:
         return []
-    frames = samples[:n_frames * frame_len].reshape(n_frames, frame_len)
-    rms = np.sqrt((frames ** 2).mean(axis=1))
+    rms = np.concatenate(rms_list)
 
     # порог: топ-10% самых громких окон, но не тише абсолютного пола
     thr = max(float(np.percentile(rms, threshold_percentile)), 0.02)
@@ -415,7 +434,7 @@ def find_energy_peaks(audio_path: str, frame_sec: float = 0.5,
                 "start": round(s * frame_sec, 2),
                 "end": round(e * frame_sec, 2),
                 "duration": round(dur, 2),
-                "energy": round(float(rms[s:e].mean() / avg), 2),  # во сколько раз громче среднего
+                "energy": round(float(rms[s:e].mean() / avg), 2),
             })
 
     moments.sort(key=lambda m: m["energy"], reverse=True)

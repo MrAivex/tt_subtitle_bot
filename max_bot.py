@@ -67,6 +67,7 @@ def main_menu_kb():
         "type": "inline_keyboard",
         "payload": {
             "buttons": [
+                [{"type": "callback", "text": "🎬 Найти хайлайты", "payload": "find_highlights"}],
                 [{"type": "callback", "text": "📦 Подписки", "payload": "show_subscriptions"}],
                 [{"type": "callback", "text": "✉️ Указать email", "payload": "ask_email"}],
                 [{"type": "callback", "text": "ℹ️ Помощь", "payload": "help"}],
@@ -228,6 +229,183 @@ async def handle_video_by_token(chat_id: int, user_id: int, video_token: str):
                 pass
 
 
+async def handle_find_highlights_start(chat_id: int, user_id: int):
+    """Запускает процесс поиска хайлайтов."""
+    await bot.send_message(
+        chat_id,
+        "🎬 *Поиск хайлайтов*\n\n"
+        "Отправь мне видео (до 2 часов), и я найду самые крутые моменты!\n\n"
+        "⏱️ Сканирование займёт 3-5 минут."
+    )
+
+async def handle_scan_video(chat_id: int, user_id: int, video_token: str):
+    """Сканирует видео и находит интересные моменты."""
+    is_admin = user_id in ADMIN_IDS
+
+    async with async_session_max() as session:
+        user = await get_or_create_user(session, user_id, chat_id)
+
+        if not is_admin and not can_process_video(user):
+            await bot.send_message(
+                chat_id,
+                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
+                "Возвращайся завтра или оформи подписку через /pay."
+            )
+            return
+
+    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
+
+    video_url = await bot.get_video_url(video_token)
+    if not video_url:
+        if status_id:
+            await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
+        return
+
+    os.makedirs("downloads", exist_ok=True)
+    input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+
+    try:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
+            async with session_http.get(video_url) as r:
+                if r.status != 200:
+                    raise Exception(f"HTTP {r.status}")
+                with open(input_path, "wb") as f:
+                    f.write(await r.read())
+    except Exception as e:
+        if status_id:
+            await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
+        return
+
+    if status_id:
+        await bot.edit_message(chat_id, status_id, "🔍 Сканирую видео на крутые моменты (это займёт 3-5 минут)...")
+
+    try:
+        from core import scan_video_for_highlights
+        result = await asyncio.to_thread(scan_video_for_highlights, input_path, max_moments=5)
+    except Exception as e:
+        if status_id:
+            await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {e}")
+        return
+
+    moments = result.get("moments", [])
+    if not moments:
+        if status_id:
+            await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        return
+
+    # Сохраняем состояние
+    from highlight_states import set_state
+    set_state(user_id, chat_id, input_path, moments)
+
+    # Формируем сообщение со списком моментов
+    lines = ["🎬 *Нашёл крутые моменты!*\n"]
+    for i, m in enumerate(moments, 1):
+        start_min = int(m["start"] // 60)
+        start_sec = int(m["start"] % 60)
+        end_min = int(m["end"] // 60)
+        end_sec = int(m["end"] % 60)
+        duration = int(m["end"] - m["start"])
+        lines.append(f"*{i}.* {start_min}:{start_sec:02d} - {end_min}:{end_sec:02d} ({duration} сек)")
+
+    lines.append("\nКакие моменты нарезать с субтитрами?")
+    lines.append("Напиши номера через запятую (например: 1, 3, 5)")
+    lines.append("Или отправь /cancel для отмены.")
+
+    if status_id:
+        await bot.edit_message(chat_id, status_id, "\n".join(lines))
+    else:
+        await bot.send_message(chat_id, "\n".join(lines))
+
+async def handle_select_moments(chat_id: int, user_id: int, text: str):
+    """Обрабатывает выбор моментов пользователем."""
+    from highlight_states import get_state, clear_state
+    
+    state = get_state(user_id)
+    if not state:
+        await bot.send_message(chat_id, "❌ Сначала нажми '🎬 Найти хайлайты' и отправь видео.")
+        return
+
+    if text.strip().lower() == "/cancel":
+        clear_state(user_id)
+        if os.path.exists(state["video_path"]):
+            os.remove(state["video_path"])
+        await bot.send_message(chat_id, "❌ Отменено.", reply_markup=main_menu_kb())
+        return
+
+    # Парсим номера
+    try:
+        selected_indices = [int(x.strip()) - 1 for x in text.split(",")]
+    except ValueError:
+        await bot.send_message(chat_id, "❌ Введи номера через запятую (например: 1, 3, 5)")
+        return
+
+    moments = state["moments"]
+    valid_indices = [i for i in selected_indices if 0 <= i < len(moments)]
+    
+    if not valid_indices:
+        await bot.send_message(chat_id, f"❌ Нет таких моментов. Доступно от 1 до {len(moments)}.")
+        return
+
+    if len(valid_indices) > 3:
+        await bot.send_message(chat_id, "❌ Можно выбрать максимум 3 момента.")
+        return
+
+    status_id = await bot.send_message(chat_id, f"🎬 Нарезаю {len(valid_indices)} клип(ов) с субтитрами...")
+
+    is_premium = False
+    async with async_session_max() as session:
+        user = await get_or_create_user(session, user_id, chat_id)
+        is_premium = user.active_sub != "default"
+        if not (user_id in ADMIN_IDS):
+            await increment_video_counter(user, session)
+
+    from core import process_video, cut_clip
+    clips = []
+
+    try:
+        for idx in valid_indices:
+            moment = moments[idx]
+            clip_path = state["video_path"].replace(".mp4", f"_clip_{idx}.mp4")
+            
+            # Нарезаем клип
+            await asyncio.to_thread(cut_clip, state["video_path"], moment["start"], moment["end"], clip_path)
+            
+            # Обрабатываем с субтитрами
+            result = await asyncio.to_thread(process_video, clip_path, str(user_id), is_premium)
+            clips.append(result["video_path"])
+            
+            # Удаляем промежуточный клип без субтитров
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
+
+    except Exception as e:
+        if status_id:
+            await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {e}")
+        clear_state(user_id)
+        if os.path.exists(state["video_path"]):
+            os.remove(state["video_path"])
+        return
+
+    # Отправляем клипы
+    if status_id:
+        await bot.edit_message(chat_id, status_id, "📤 Отправляю клипы...")
+
+    for i, clip in enumerate(clips, 1):
+        await bot.send_video(chat_id, clip, caption=f"✅ Клип #{i}")
+        if os.path.exists(clip):
+            os.remove(clip)
+
+    # Очистка
+    clear_state(user_id)
+    if os.path.exists(state["video_path"]):
+        os.remove(state["video_path"])
+
+    if status_id:
+        await bot.edit_message(chat_id, status_id, "✅ Готово!")
+
+
 # ------------------------------------------------------------
 # Вебхук-обработчик MAX
 # ------------------------------------------------------------
@@ -265,11 +443,12 @@ async def handle_max_webhook(request: web.Request):
                 await bot.send_message(
                     chat_id,
                     "🤖 *Справка*\n\n"
+                    "*🎬 Найти хайлайты* — найду лучшие моменты в твоём видео\n"
+                    "*📦 Подписки* — оформить премиум\n"
                     "/start — начать\n"
                     "/email — указать email\n"
-                    "/pay — купить подписку\n"
                     "/help — это сообщение\n\n"
-                    "Отправь видео — верну с субтитрами!",
+                    "Или просто отправь видео — верну с субтитрами!",
                     reply_markup=main_menu_kb()
                 )
                 return web.Response(text="OK")
@@ -297,6 +476,13 @@ async def handle_max_webhook(request: web.Request):
                     user = await get_or_create_user(session, user_id, chat_id)
                 await handle_show_subscriptions(chat_id)
                 return web.Response(text="OK")
+            
+
+            # Проверяем состояние пользователя (выбор моментов)
+            from highlight_states import get_state
+            if get_state(user_id) and text:
+                asyncio.create_task(handle_select_moments(chat_id, user_id, text))
+                return web.Response(text="OK")
 
             # Видео?
             video_token = None
@@ -308,16 +494,16 @@ async def handle_max_webhook(request: web.Request):
                         break
 
             if video_token:
-                asyncio.create_task(handle_video_by_token(chat_id, user_id, video_token))
+                # Проверяем, есть ли активный процесс поиска хайлайтов
+                if get_state(user_id):
+                    # Пользователь отправил видео в процессе поиска хайлайтов
+                    asyncio.create_task(handle_scan_video(chat_id, user_id, video_token))
+                else:
+                    # Обычная обработка видео
+                    asyncio.create_task(handle_video_by_token(chat_id, user_id, video_token))
                 return web.Response(text="OK")
 
-            # Проверяем — может это email?
-            if text and "@" in text and "." in text:
-                await handle_email_input(chat_id, user_id, text)
-                return web.Response(text="OK")
-
-            return web.Response(text="OK")
-
+            
         # --- message_callback ---
         if update_type == "message_callback":
             cb = data.get("callback", {})
@@ -329,7 +515,9 @@ async def handle_max_webhook(request: web.Request):
             if not chat_id:
                 return web.Response(text="OK")
 
-            if payload == "show_subscriptions":
+            if payload == "find_highlights":
+                await handle_find_highlights_start(chat_id, user_id)
+            elif payload == "show_subscriptions":
                 await handle_show_subscriptions(chat_id)
             elif payload == "ask_email":
                 await handle_ask_email(chat_id)

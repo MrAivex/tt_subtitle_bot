@@ -6,6 +6,9 @@ from datetime import timedelta
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont
 
+import wave
+import numpy as np
+
 # ------------------------------------------------------------
 # 1. Автоопределение ffmpeg
 # ------------------------------------------------------------
@@ -349,3 +352,113 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
         os.chdir(old_cwd)
 
     return {"video_path": result_video, "srt_path": result_srt}
+
+
+# ------------------------------------------------------------
+# 6. СКАНЕР ХАЙЛАЙТОВ (Этап 1: быстро, БЕЗ Whisper)
+# ------------------------------------------------------------
+
+def extract_audio_wav(video_path: str, audio_path: str):
+    """Извлекает аудио в wav 16kHz mono для анализа."""
+    subprocess.run([FFMPEG, "-y", "-i", video_path, "-ar", "16000", "-ac", "1", audio_path],
+                   check=True, capture_output=True, text=True)
+
+def find_energy_peaks(audio_path: str, frame_sec: float = 0.5,
+                      threshold_percentile: float = 90,
+                      min_peak_sec: float = 2.0,
+                      merge_gap_sec: float = 3.0) -> list:
+    """
+    Ищет громкие моменты (крики, смех, выстрелы) по энергии звука.
+    Работает за секунды даже на часовом стриме.
+    """
+    with wave.open(audio_path, "rb") as wf:
+        sr = wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+    frame_len = int(sr * frame_sec)
+    n_frames = len(samples) // frame_len
+    if n_frames == 0:
+        return []
+    frames = samples[:n_frames * frame_len].reshape(n_frames, frame_len)
+    rms = np.sqrt((frames ** 2).mean(axis=1))
+
+    # порог: топ-10% самых громких окон, но не тише абсолютного пола
+    thr = max(float(np.percentile(rms, threshold_percentile)), 0.02)
+
+    above = rms > thr
+    raw_peaks = []
+    start = None
+    for i, a in enumerate(above):
+        if a and start is None:
+            start = i
+        elif not a and start is not None:
+            raw_peaks.append((start, i))
+            start = None
+    if start is not None:
+        raw_peaks.append((start, len(above)))
+
+    # склеиваем пики, разделённые паузой меньше merge_gap_sec
+    merged = []
+    for s, e in raw_peaks:
+        if merged and (s - merged[-1][1]) * frame_sec <= merge_gap_sec:
+            merged[-1][1] = e
+        else:
+            merged.append([s, e])
+
+    moments = []
+    avg = float(rms.mean()) + 1e-9
+    for s, e in merged:
+        dur = (e - s) * frame_sec
+        if dur >= min_peak_sec:
+            moments.append({
+                "start": round(s * frame_sec, 2),
+                "end": round(e * frame_sec, 2),
+                "duration": round(dur, 2),
+                "energy": round(float(rms[s:e].mean() / avg), 2),  # во сколько раз громче среднего
+            })
+
+    moments.sort(key=lambda m: m["energy"], reverse=True)
+    return moments
+
+def select_moments(moments: list, video_duration: float, count: int = 5,
+                   pad_before: float = 3.0, pad_after: float = 4.0,
+                   min_clip_sec: float = 10.0, max_clip_sec: float = 60.0) -> list:
+    """Превращает пики в готовые таймкоды клипов с отступами и без пересечений."""
+    result = []
+    for m in moments:
+        start = max(0.0, m["start"] - pad_before)
+        end = min(video_duration, m["end"] + pad_after)
+        if end - start < min_clip_sec:
+            center = (m["start"] + m["end"]) / 2
+            start = max(0.0, center - min_clip_sec / 2)
+            end = min(video_duration, start + min_clip_sec)
+        if end - start > max_clip_sec:
+            end = start + max_clip_sec
+        if any(not (end <= r["start"] or start >= r["end"]) for r in result):
+            continue
+        result.append({"start": round(start, 2), "end": round(end, 2), "energy": m["energy"]})
+        if len(result) >= count:
+            break
+    result.sort(key=lambda r: r["start"])
+    return result
+
+def cut_clip(video_path: str, start: float, end: float, out_path: str):
+    """Точная нарезка куска с перекодированием (veryfast — бережём 2 ядра)."""
+    subprocess.run([FFMPEG, "-y", "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", video_path,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                    "-c:a", "aac", "-b:a", "128k", out_path],
+                   check=True, capture_output=True, text=True)
+
+def scan_video_for_highlights(video_path: str, max_moments: int = 5) -> dict:
+    """ГЛАВНАЯ ФУНКЦИЯ ЭТАПА 1: возвращает список таймкодов крутых моментов."""
+    audio_tmp = os.path.splitext(video_path)[0] + "_scan.wav"
+    try:
+        extract_audio_wav(video_path, audio_tmp)
+        duration = get_video_duration(video_path)
+        moments = find_energy_peaks(audio_tmp)
+        clips = select_moments(moments, duration, count=max_moments)
+        return {"duration": duration, "moments": clips}
+    finally:
+        if os.path.exists(audio_tmp):
+            os.remove(audio_tmp)

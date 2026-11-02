@@ -123,6 +123,27 @@ def create_rounded_rect(width: int, height: int, radius: int, color: tuple) -> I
     draw.rounded_rectangle([(0, 0), (width-1, height-1)], radius=radius, fill=color)
     return img
 
+
+
+# ------------------------------------------------------------
+# Callback для прогресса (синхронный — вызывается из sync-функций)
+# ------------------------------------------------------------
+_progress_callback = None
+
+def set_progress_callback(callback):
+    """Устанавливает синхронный callback: callback(stage, progress, estimate)."""
+    global _progress_callback
+    _progress_callback = callback
+
+def _report_progress(stage: str, progress: float = 0.0, estimate: float = 0):
+    """Синхронный вызов callback."""
+    if _progress_callback is not None:
+        try:
+            _progress_callback(stage, progress, estimate)
+        except Exception as e:
+            print(f"[progress] callback error: {e}")
+
+
 # ------------------------------------------------------------
 # 5. Основная функция обработки видео
 # ------------------------------------------------------------
@@ -145,17 +166,22 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
     try:
         video_w, video_h = get_video_resolution(base_name + ext)
         video_duration = get_video_duration(base_name + ext)
-
-        # 1. Извлечение аудио
+        
+        # Этап 1: Извлечение аудио (~30 сек для 10 мин видео)
+        _report_progress("🔊 Извлечение аудио", 0.0, video_duration * 0.5)
         subprocess.run([FFMPEG, "-y", "-i", base_name + ext,
                         "-ar", "16000", "-ac", "1", audio_file],
                        check=True, capture_output=True, text=True)
-
-        # 2. Распознавание с word timestamps
+        _report_progress("🔊 Извлечение аудио", 1.0)
+        
+        # Этап 2: Распознавание речи (~1.5 мин на минуту видео)
+        _report_progress("🎤 Распознавание речи", 0.0, video_duration * 1.5 * 60)
         segments, _ = get_model().transcribe(audio_file, language="ru", word_timestamps=True)
         seg_list = list(segments)
-
-        # 3. SRT для пользователя
+        _report_progress("🎤 Распознавание речи", 1.0)
+        
+        # Этап 3: Генерация SRT
+        _report_progress("📝 Генерация субтитров", 0.0, 10)
         srt_text = ""
         for i, seg in enumerate(seg_list, 1):
             start = str(timedelta(seconds=seg.start))[:-3].replace(".", ",")
@@ -163,6 +189,7 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
             srt_text += f"{i}\n{start} --> {end}\n{seg.text.strip()}\n\n"
         with open(srt_file, "w", encoding="utf-8") as f:
             f.write(srt_text)
+        _report_progress("📝 Генерация субтитров", 1.0)
 
         # 4. Шрифт и цвета
         font_path = get_font_path()
@@ -326,6 +353,7 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
             )
             current_label = output_label.strip("[]")
 
+        _report_progress("🖼️ Наложение субтитров", 0.0, video_duration * 0.3 * 60)
         if filter_parts:
             filter_complex = ";".join(filter_parts)
             cmd = [FFMPEG, "-y"] + [item for p in inputs for item in ["-i", p]] + [
@@ -337,8 +365,8 @@ def process_video(input_path: str, user_id: str, is_premium: bool = False) -> di
             ]
         else:
             cmd = [FFMPEG, "-y", "-i", base_name + ext, "-c", "copy", output_file]
-
         subprocess.run(cmd, check=True, capture_output=True, text=True)
+        _report_progress("🖼️ Наложение субтитров", 1.0)
 
         # 9. Удаление временных файлов
         for ov in overlays:
@@ -473,10 +501,17 @@ def scan_video_for_highlights(video_path: str, max_moments: int = 5) -> dict:
     """ГЛАВНАЯ ФУНКЦИЯ ЭТАПА 1: возвращает список таймкодов крутых моментов."""
     audio_tmp = os.path.splitext(video_path)[0] + "_scan.wav"
     try:
+        _report_progress("🔊 Извлечение аудио", 0.0, 30)
         extract_audio_wav(video_path, audio_tmp)
+        _report_progress("🔊 Извлечение аудио", 1.0)
+        
         duration = get_video_duration(video_path)
+        
+        _report_progress("🔍 Анализ громкости", 0.0, 60)
         moments = find_energy_peaks(audio_tmp)
         clips = select_moments(moments, duration, count=max_moments)
+        _report_progress("🔍 Анализ громкости", 1.0)
+        
         return {"duration": duration, "moments": clips}
     finally:
         if os.path.exists(audio_tmp):

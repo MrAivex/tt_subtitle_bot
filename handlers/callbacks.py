@@ -52,66 +52,66 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
     elif payload.startswith("mode:"):
         mode = payload.split(":")[1]
         session_manager.update_options(user_id, mode=mode)
-        if state:
+        if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.chat_id,
+                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
                 "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
                 reply_markup=processing_options_kb(
                     has_webcam=state.options.has_webcam,
                     format_mode=state.options.format,
-                    mode=state.options.mode  # ← ДОБАВИТЬ
+                    mode=state.options.mode
                 )
             )
 
     elif payload == "webcam:yes":
         session_manager.update_options(user_id, has_webcam=True)
-        if state:
+        if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.chat_id,
+                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
                 "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
                 reply_markup=processing_options_kb(
                     has_webcam=True,
                     format_mode=state.options.format,
-                    mode=state.options.mode  # ← ДОБАВИТЬ
+                    mode=state.options.mode
                 )
             )
 
     elif payload == "webcam:no":
         session_manager.update_options(user_id, has_webcam=False)
-        if state:
+        if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.chat_id,
+                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
                 "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
                 reply_markup=processing_options_kb(
                     has_webcam=False,
                     format_mode=state.options.format,
-                    mode=state.options.mode  # ← ДОБАВИТЬ
+                    mode=state.options.mode
                 )
             )
 
     elif payload == "format:original":
         session_manager.update_options(user_id, format="original")
-        if state:
+        if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.chat_id,
+                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
                 "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
                 reply_markup=processing_options_kb(
                     has_webcam=state.options.has_webcam,
                     format_mode="original",
-                    mode=state.options.mode  # ← ДОБАВИТЬ
+                    mode=state.options.mode
                 )
             )
 
     elif payload == "format:vertical":
         session_manager.update_options(user_id, format="vertical_9_16")
-        if state:
+        if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.chat_id,
+                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
                 "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
                 reply_markup=processing_options_kb(
                     has_webcam=state.options.has_webcam,
                     format_mode="vertical_9_16",
-                    mode=state.options.mode  # ← ДОБАВИТЬ
+                    mode=state.options.mode
                 )
             )
     

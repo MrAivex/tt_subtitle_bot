@@ -61,7 +61,7 @@ async def handle_max_webhook(request: web.Request):
 
             # Хайлайты: пользователь выбирает моменты
             state = session_manager.get_state(user_id)
-            if state and state.stage == "awaiting_selection" and text:
+            if state and state.stage == "awaiting_moment_selection" and text:
                 asyncio.create_task(handle_select_moments(chat_id, user_id, text))
                 return web.Response(text="OK")
 
@@ -72,18 +72,13 @@ async def handle_max_webhook(request: web.Request):
 
             if att_info:
                 stage = state.stage if state else None
-                if stage == "awaiting_selection":
-                    # прислал новое видео во время выбора — начинаем скан заново
-                    old = session_manager.get_state(user_id)
+                if stage == "awaiting_moment_selection":
+                    # прислал новое видео во время выбора моментов — начинаем заново
                     session_manager.clear_state(user_id)
-                    if old and os.path.exists(old.video_path):
-                        try:
-                            os.remove(old.video_path)
-                        except Exception:
-                            pass
-                    stage = "awaiting_video"
-                if stage == "awaiting_video":
-                    asyncio.create_task(handle_scan_video(chat_id, user_id, att_info))
+                    stage = "awaiting_options"
+                if stage == "awaiting_options":
+                    # Видео уже скачано, показываем клавиатуру
+                    asyncio.create_task(handle_video(chat_id, user_id, att_info))
                 else:
                     asyncio.create_task(handle_video(chat_id, user_id, att_info))
                 return web.Response(text="OK")

@@ -6,7 +6,7 @@ from services_max import (
     set_user_email,
     get_users_stats,
 )
-from keyboards import main_menu_kb, subscriptions_kb
+from keyboards.main_kb import main_menu_kb, subscriptions_kb
 from payments import create_payment
 from app import bot
 

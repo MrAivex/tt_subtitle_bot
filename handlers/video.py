@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Обычное видео (полное субтитрирование)
 # ------------------------------------------------------------
 async def handle_video(chat_id: int, user_id: int, att: dict):
-    """Скачивает и обрабатывает видео с субтитрами."""
+    """Скачивает видео и показывает меню настроек обработки."""
     is_admin = user_id in ADMIN_IDS
 
     async with async_session_max() as session:
@@ -36,9 +36,8 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
                 "Возвращайся завтра или оформи подписку через /pay.",
             )
             return
-        is_premium = user.active_sub != "default"
 
-    status_id = await bot.send_message(chat_id, "📥 Готовлю видео к скачиванию...")
+    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео...")
 
     # Защита по размеру
     size = att.get("size") or 0
@@ -54,8 +53,7 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
         await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
         return
 
-    await bot.edit_message(chat_id, status_id, "📥 Скачиваю видео...")
-
+    # Скачивание
     os.makedirs("downloads", exist_ok=True)
     input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
 
@@ -67,54 +65,16 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {type(e).__name__}: {e}")
         return
 
-    # Проверка длины
-    try:
-        dur = await asyncio.to_thread(engine.get_video_duration, input_path)
-        if dur > MAX_FULL_VIDEO_SEC and not is_admin:
-            await bot.edit_message(
-                chat_id, status_id,
-                "⏱ Видео длиннее 30 минут — полное субтитрирование займёт часы.\n"
-                "Нажми «🎬 Найти хайлайты» и отправь это видео ещё раз: "
-                "я найду лучшие моменты и нарежу клипы с субтитрами.",
-            )
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            return
-    except Exception:
-        pass
+    # Сохраняем видео в состояние и показываем меню настроек
+    session_manager.set_awaiting_video(user_id, chat_id)
+    session_manager.set_video_path(user_id, input_path)
 
-    # Обработка
-    await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео...")
-    try:
-        result = await asyncio.to_thread(engine.process_video, input_path, str(user_id), is_premium)
-    except subprocess.CalledProcessError as e:
-        err = (e.stderr or "")[:500]
-        logger.error(f"[FFMPEG ERROR] {err}")
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка ffmpeg:\n{err[:200]}")
-        return
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"[PROCESS VIDEO ERROR] {type(e).__name__}: {e}\n{error_details}")
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {str(e)[:200]}")
-        return
-
-    # Отправка
-    await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")
-    await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
-
-    if result.get("srt_path"):
-        srt_path = result["srt_path"]
-        txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
-        try:
-            os.rename(srt_path, txt_path)
-        except Exception:
-            txt_path = srt_path
-        await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
-
-    if not is_admin:
-        await increment_video_counter(user, session)
-
-    await bot.edit_message(chat_id, status_id, "✅ Готово!")
+    from keyboards import processing_options_kb
+    await bot.edit_message(
+        chat_id, status_id,
+        "🎬 Видео скачано! Выбери параметры обработки:",
+        reply_markup=processing_options_kb()
+    )
 
 
 # ------------------------------------------------------------
@@ -254,7 +214,15 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             moment = state.moments[idx]
             clip_path = state.video_path.replace(".mp4", f"_clip_{idx}.mp4")
             await asyncio.to_thread(engine.cut_clip, state.video_path, moment["start"], moment["end"], clip_path)
-            result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium)
+            # Передаём настройки из состояния
+            webcam_box = state.webcam_box if hasattr(state, 'webcam_box') else None
+            result = await asyncio.to_thread(
+                engine.process_video, 
+                clip_path, 
+                str(user_id), 
+                is_premium,
+                webcam_box
+            )
             clips.append(result["video_path"])
             if os.path.exists(clip_path):
                 os.remove(clip_path)
@@ -276,3 +244,79 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
         os.remove(state.video_path)
 
     await bot.edit_message(chat_id, status_id, "✅ Готово!")
+
+
+async def start_processing(chat_id: int, user_id: int):
+    """Запускает обработку видео с выбранными настройками."""
+    from app import session_manager
+    
+    state = session_manager.get_state(user_id)
+    if not state or not state.video_path:
+        await bot.send_message(chat_id, "❌ Видео не найдено. Отправь видео ещё раз.")
+        return
+    
+    options = state.options
+    video_path = state.video_path
+    
+    # Удаляем сообщение с клавиатурой
+    await bot.send_message(chat_id, "⚙️ Начинаю обработку...")
+    
+    try:
+        if options.mode == "highlights":
+            # Режим хайлайтов: сканируем и показываем моменты
+            await bot.send_message(chat_id, "🔍 Сканирую видео на крутые моменты (2-4 минуты)...")
+            
+            result = await asyncio.to_thread(engine.scan_highlights, video_path, MAX_HIGHLIGHTS)
+            moments = result.get("moments", [])
+            
+            if not moments:
+                await bot.send_message(chat_id, "😕 Не нашёл ярких моментов в этом видео.")
+                session_manager.clear_state(user_id)
+                return
+            
+            session_manager.set_awaiting_moment_selection(user_id, moments)
+            
+            lines = ["🎬 *Нашёл крутые моменты!*\n"]
+            for i, m in enumerate(moments, 1):
+                s, e = m["start"], m["end"]
+                lines.append(f"*{i}.* {format_moment_time(s)} – {format_moment_time(e)} ({int(e - s)} сек, громкость x{m['energy']})")
+            lines.append("\nКакие моменты нарезать с субтитрами?")
+            lines.append("Напиши номера через запятую (например: 1, 3)")
+            lines.append("/cancel — отмена.")
+            
+            await bot.send_message(chat_id, "\n".join(lines))
+        
+        elif options.mode == "full":
+            # Режим полного субтитрирования
+            await bot.send_message(chat_id, "🎬 Обрабатываю видео (это займёт время)...")
+            
+            is_premium = False
+            async with async_session_max() as session:
+                user = await get_or_create_user(session, user_id, chat_id)
+                is_premium = user.active_sub != "default"
+                if user_id not in ADMIN_IDS:
+                    await increment_video_counter(user, session)
+            
+            result = await asyncio.to_thread(engine.process_video, video_path, str(user_id), is_premium)
+            
+            await bot.send_message(chat_id, "📤 Отправляю видео...")
+            await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
+            
+            if result.get("srt_path"):
+                srt_path = result["srt_path"]
+                txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
+                try:
+                    os.rename(srt_path, txt_path)
+                except Exception:
+                    txt_path = srt_path
+                await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
+            
+            session_manager.clear_state(user_id)
+            await bot.send_message(chat_id, "✅ Готово!")
+    
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[PROCESSING ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.send_message(chat_id, f"❌ Ошибка обработки: {type(e).__name__}: {str(e)[:200]}")
+        session_manager.clear_state(user_id)

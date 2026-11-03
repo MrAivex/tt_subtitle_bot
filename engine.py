@@ -14,18 +14,15 @@ class VideoEngine:
         self.device = device
         self._model: Optional[WhisperModel] = None
         
-        # Автоопределение FFmpeg
         if platform.system() == "Windows":
             self.ffmpeg = r"D:\Programingg\PO\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe"
             self.ffprobe = os.path.join(os.path.dirname(self.ffmpeg), "ffprobe.exe")
         else:
-            "ffmpeg"
             self.ffmpeg = "ffmpeg"
             self.ffprobe = "ffprobe"
 
     @property
     def model(self) -> WhisperModel:
-        """Ленивая загрузка модели Whisper только при первом вызове (экономит RAM)."""
         if self._model is None:
             compute_type = "float16" if self.device == "cuda" else "int8"
             self._model = WhisperModel("small", device=self.device, compute_type=compute_type)
@@ -48,6 +45,13 @@ class VideoEngine:
         cmd = [self.ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video_path]
         out = subprocess.check_output(cmd, text=True).strip()
         return float(out)
+
+    def get_video_resolution(self, video_path: str) -> tuple:
+        cmd = [self.ffprobe, "-v", "error", "-select_streams", "v:0",
+               "-show_entries", "stream=width,height", "-of", "csv=p=0", video_path]
+        out = subprocess.check_output(cmd, text=True).strip()
+        w, h = map(int, out.split(","))
+        return w, h
 
     def _measure_text(self, font: ImageFont.FreeTypeFont, text: str):
         bbox = font.getbbox(text)
@@ -77,17 +81,15 @@ class VideoEngine:
         return img
 
     # ==========================================================
-    # ЭТАП 1: СКАНИРОВАНИЕ ХАЙЛАЙТОВ (Быстро, без Whisper)
+    # ЭТАП 1: СКАНИРОВАНИЕ ХАЙЛАЙТОВ
     # ==========================================================
     def scan_highlights(self, video_path: str, max_moments: int = 5) -> Dict:
-        """Возвращает список таймкодов крутых моментов."""
         v_path = Path(video_path).resolve()
-        # ИСПРАВЛЕНИЕ: правильно создаём имя файла
         audio_tmp = v_path.parent / f"{v_path.stem}_scan.wav"
         
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_tmp)],
-                        check=True, capture_output=True, text=True)
+                           check=True, capture_output=True, text=True)
             moments = self._find_energy_peaks(str(audio_tmp))
             duration = self.get_video_duration(str(v_path))
             clips = self._select_moments(moments, duration, count=max_moments)
@@ -101,7 +103,7 @@ class VideoEngine:
         with wave.open(audio_path, "rb") as wf:
             sr = wf.getframerate()
             frame_len = int(sr * frame_sec)
-            block_frames = sr * 600  # Чанки по 10 минут для экономии RAM
+            block_frames = sr * 600
             rms_list = []
             leftover = np.empty(0, dtype=np.float32)
 
@@ -179,7 +181,6 @@ class VideoEngine:
         v_path = Path(input_path).resolve()
         video_dir = v_path.parent
         base_name = v_path.stem
-        ext = v_path.suffix
 
         audio_file = video_dir / f"{base_name}.wav"
         srt_file = video_dir / f"{base_name}.srt"
@@ -188,13 +189,11 @@ class VideoEngine:
         temp_img_dir.mkdir(exist_ok=True)
 
         try:
-            # 1. Аудио и транскрипция
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_file)],
                            check=True, capture_output=True, text=True)
             segments, _ = self.model.transcribe(str(audio_file), language="ru", word_timestamps=True)
             seg_list = list(segments)
 
-            # 2. SRT
             srt_text = ""
             for i, seg in enumerate(seg_list, 1):
                 start = str(timedelta(seconds=seg.start))[:-3].replace(".", ",")
@@ -202,7 +201,6 @@ class VideoEngine:
                 srt_text += f"{i}\n{start} --> {end}\n{seg.text.strip()}\n\n"
             srt_file.write_text(srt_text, encoding="utf-8")
 
-            # 3. Подготовка к рендеру
             font_path = self._get_font_path()
             pillow_font = ImageFont.truetype(font_path, 36)
             white, black_stroke, purple_bg = (255, 255, 255, 255), (0, 0, 0, 255), (157, 78, 221, 240)
@@ -213,7 +211,6 @@ class VideoEngine:
                 subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)], check=True, capture_output=True, text=True)
                 return {"video_path": str(output_file), "srt_path": str(srt_file)}
 
-            # 4. Разбивка на строки
             video_w, video_h = self.get_video_resolution(str(v_path))
             video_duration = self.get_video_duration(str(v_path))
             max_line_width = video_w - 40
@@ -231,7 +228,6 @@ class VideoEngine:
             if cur_line:
                 lines.append({"text": " ".join(x["word"] for x in cur_line), "start": cur_line[0]["start"], "end": cur_line[-1]["end"], "words": cur_line})
 
-            # 5. Генерация PNG и overlays
             overlays = []
             for line_idx, line in enumerate(lines):
                 words_in_line = line["words"]
@@ -263,7 +259,6 @@ class VideoEngine:
                 text_img.save(str(text_png_path))
                 overlays.append({"start": line["start"], "end": line["end"], "x": x_start, "y": y_line, "png": str(text_png_path)})
 
-            # 6. Водяной знак
             if not is_premium:
                 watermark_font = ImageFont.truetype(font_path, 28)
                 watermark_img = self._create_text_image("@tt_subtitle_bot", watermark_font, white, None, 0, 6, None, 2, black_stroke)
@@ -273,7 +268,6 @@ class VideoEngine:
                 watermark_img.save(str(watermark_png_path))
                 overlays.append({"start": 0.0, "end": video_duration, "x": 20, "y": video_h - watermark_img.height - 20, "png": str(watermark_png_path)})
 
-            # 7. Сборка ffmpeg команды (используем абсолютные пути!)
             inputs = [str(v_path)]
             filter_parts = []
             current_label = "0:v"
@@ -299,12 +293,11 @@ class VideoEngine:
             return {"video_path": str(output_file), "srt_path": str(srt_file)}
         
         finally:
-            # Гарантированная очистка временных файлов
             for f in temp_img_dir.glob("*.png"):
                 f.unlink(missing_ok=True)
             try:
                 temp_img_dir.rmdir()
             except (FileNotFoundError, OSError):
-                pass  # Папка уже удалена или не пуста
+                pass
             if audio_file.exists():
                 audio_file.unlink()

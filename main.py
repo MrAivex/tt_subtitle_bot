@@ -16,22 +16,30 @@ from yookassa_webhook import handle_yookassa_webhook
 # ============================================================
 # НАСТРОЙКА ЛОГИРОВАНИЯ
 # ============================================================
+# Устанавливаем глобальный уровень WARNING для всех логгеров
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # По умолчанию только WARNING и выше
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-# Отключаем спам от aiohttp.access
-logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
-logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
-logging.getLogger("apscheduler").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("faster_whisper").setLevel(logging.WARNING)
-
+# Включаем INFO только для нашего основного логгера
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Явно выключаем спам от всех библиотек
+SPAM_LOGGERS = [
+    "aiohttp", "aiohttp.access", "aiohttp.server",
+    "apscheduler", "apscheduler.scheduler",
+    "httpx", "httpx2", "httpcore",
+    "huggingface_hub", "faster_whisper",
+    "urllib3", "urllib3.connectionpool",
+    "PIL", "PIL.PngImagePlugin",
+    "sqlalchemy", "sqlalchemy.engine",
+]
+
+for logger_name in SPAM_LOGGERS:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
 # ============================================================
 
 

@@ -302,6 +302,9 @@ class VideoEngine:
             # Гарантированная очистка временных файлов
             for f in temp_img_dir.glob("*.png"):
                 f.unlink(missing_ok=True)
-            temp_img_dir.rmdir(missing_ok=True)
+            try:
+                temp_img_dir.rmdir()
+            except (FileNotFoundError, OSError):
+                pass  # Папка уже удалена или не пуста
             if audio_file.exists():
                 audio_file.unlink()

@@ -177,7 +177,8 @@ class VideoEngine:
     # ==========================================================
     # ЭТАП 2: ПОЛНАЯ ОБРАБОТКА С СУБТИТРАМИ
     # ==========================================================
-    def process_video(self, input_path: str, user_id: str, is_premium: bool = False) -> Dict:
+    def process_video(self, input_path: str, user_id: str, is_premium: bool = False, 
+                  webcam_box: Optional[Dict] = None) -> Dict:
         v_path = Path(input_path).resolve()
         video_dir = v_path.parent
         base_name = v_path.stem

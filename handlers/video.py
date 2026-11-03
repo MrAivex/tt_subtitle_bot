@@ -230,7 +230,10 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             if os.path.exists(clip_path):
                 os.remove(clip_path)
     except Exception as e:
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[CLIP ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {type(e).__name__}: {str(e)[:200]}")
         session_manager.clear_state(user_id)
         if os.path.exists(state.video_path):
             os.remove(state.video_path)

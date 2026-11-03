@@ -1,3 +1,11 @@
-aiogram 
-faster-whisper 
-ffmpeg-python
+aiohttp>=3.9.0
+apscheduler>=3.10.0
+pytz>=2024.1
+python-dotenv>=1.0.0
+sqlalchemy>=2.0.0
+yookassa>=3.0.0
+faster-whisper>=1.0.0
+Pillow>=10.0.0
+numpy>=1.26.0
+requests>=2.31.0
+urllib3>=2.0.0

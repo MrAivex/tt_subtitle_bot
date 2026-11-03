@@ -10,9 +10,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pytz import timezone
 
-from progress_tracker import ProgressTracker
-from core import set_progress_callback
-
 from database_max import async_session_max, init_db_max
 from services_max import (
     get_or_create_user,
@@ -21,15 +18,13 @@ from services_max import (
     set_user_email,
     reset_all_daily_limits,
     check_expired_subscriptions,
-    get_top_users,
-    activate_subscription,
-    update_user_field,
-    get_all_user_ids,
     get_users_stats,
 )
 from subscriptions import SUBSCRIPTIONS
 from payments import create_payment
 from max_bot_client import MaxBot
+from engine import VideoEngine
+from session_manager import SessionManager
 
 import logging
 
@@ -38,14 +33,13 @@ logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpx2").setLevel(logging.WARNING)         
-logging.getLogger("huggingface_hub").setLevel(logging.WARNING) 
-logging.getLogger("urllib3").setLevel(logging.WARNING) 
-logging.getLogger("faster_whisper").setLevel(logging.WARNING)  
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
 
 load_dotenv()
 MAX_TOKEN = os.getenv("MAX_BOT_TOKEN")
-MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL")   # https://subtitle-bot.ru/max-webhook
+MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL")
 WEBHOOK_PATH = "/max-webhook"
 PORT = 8081
 
@@ -57,10 +51,12 @@ if admin_ids_str:
     except ValueError:
         pass
 
+# Инициализация компонентов
 bot = MaxBot(MAX_TOKEN)
+engine = VideoEngine(device="cpu")
+session_manager = SessionManager()
 scheduler = AsyncIOScheduler()
-PROCESS_LOCK = asyncio.Lock()     # тяжёлая обработка только по одной: os.chdir в core не потокобезопасен
-MAX_FULL_VIDEO_SEC = 30 * 60  
+MAX_FULL_VIDEO_SEC = 30 * 60
 moscow_tz = timezone("Europe/Moscow")
 
 
@@ -95,7 +91,59 @@ def subscriptions_kb():
 
 
 # ------------------------------------------------------------
-# Обработчики
+# Вспомогательные функции
+# ------------------------------------------------------------
+def extract_video_attachment(attachments: list):
+    """Ищет видео среди вложений type=video и type=file."""
+    for att in attachments:
+        t = str(att.get("type", "")).lower()
+        payload = att.get("payload") or {}
+        name = str(payload.get("filename") or att.get("filename") or "").lower()
+        size = payload.get("size") or att.get("size") or 0
+        url = payload.get("url")
+        token = payload.get("token")
+
+        if t == "video":
+            if token or url:
+                return {"kind": "video", "token": token, "url": url, "filename": name, "size": size}
+        if t == "file":
+            if name.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
+                return {"kind": "file", "token": token, "url": url, "filename": name, "size": size}
+    return None
+
+
+async def download_video(video_url: str, output_path: str):
+    """Скачивает видео потоком (экономит RAM)."""
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        async with session.get(video_url) as r:
+            if r.status != 200:
+                raise Exception(f"HTTP {r.status}")
+            with open(output_path, "wb") as f:
+                async for chunk in r.content.iter_chunked(1024 * 1024):
+                    f.write(chunk)
+
+
+async def check_video_length(input_path: str, chat_id: int, status_id: int, is_admin: bool) -> bool:
+    """Проверяет длину видео. Возвращает True если видео слишком длинное."""
+    try:
+        dur = await asyncio.to_thread(engine.get_video_duration, input_path)
+        if dur > MAX_FULL_VIDEO_SEC and not is_admin:
+            await bot.edit_message(
+                chat_id, status_id,
+                "⏱ Видео длиннее 30 минут — полное субтитрирование займёт часы.\n"
+                "Нажми «🎬 Найти хайлайты» и отправь это видео ещё раз: "
+                "я найду лучшие моменты и нарежу клипы с субтитрами."
+            )
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+# ------------------------------------------------------------
+# Обработчики команд
 # ------------------------------------------------------------
 async def handle_start(chat_id: int, user_id: int):
     async with async_session_max() as session:
@@ -143,13 +191,15 @@ async def handle_pay(chat_id: int, user_id: int, sub_id: str):
             await bot.send_message(chat_id, f"❌ Ошибка: {e}")
 
 
+# ------------------------------------------------------------
+# Обработчик обычного видео
+# ------------------------------------------------------------
 async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
-    """Получает URL видео по токену, скачивает и обрабатывает."""
+    """Скачивает и обрабатывает видео с субтитрами."""
     is_admin = user_id in ADMIN_IDS
 
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
-
         if not is_admin and not can_process_video(user):
             await bot.send_message(
                 chat_id,
@@ -157,131 +207,60 @@ async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
                 "Возвращайся завтра или оформи подписку через /pay."
             )
             return
-
         is_premium = user.active_sub != "default"
 
-        status_id = await bot.send_message(chat_id, "📥 Готовлю видео к скачиванию...")
+    status_id = await bot.send_message(chat_id, "📥 Готовлю видео к скачиванию...")
 
-        # Защита по размеру
-        size = att.get("size") or 0
-        if size and size > 2_500_000_000:
-            if status_id:
-                await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
-            return
+    # Защита по размеру
+    size = att.get("size") or 0
+    if size and size > 2_500_000_000:
+        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
+        return
 
-        # У file прямая ссылка уже есть; у video получаем по токену
-        video_url = att.get("url")
-        if not video_url and att.get("token"):
-            video_url = await bot.get_video_url(att["token"])
-        if not video_url:
-            if status_id:
-                await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
-            return
+    # Получение URL
+    video_url = att.get("url")
+    if not video_url and att.get("token"):
+        video_url = await bot.get_video_url(att["token"])
+    if not video_url:
+        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
+        return
 
-        if status_id:
-            await bot.edit_message(chat_id, status_id, "📥 Скачиваю видео...")
+    await bot.edit_message(chat_id, status_id, "📥 Скачиваю видео...")
 
-        os.makedirs("downloads", exist_ok=True)
-        input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+    os.makedirs("downloads", exist_ok=True)
+    input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
 
-            # Создаём трекер прогресса
-        tracker = ProgressTracker(bot, chat_id, status_id)
-    
-    # Скачивание с прогрессом
+    # Скачивание
     try:
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
-            async with session_http.get(video_url) as r:
-                if r.status != 200:
-                    raise Exception(f"HTTP {r.status}")
-                
-                total_size = int(r.headers.get('content-length', 0))
-                downloaded = 0
-                
-                with open(input_path, "wb") as f:
-                    async for chunk in r.content.iter_chunked(1024 * 1024):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        if total_size > 0:
-                            progress = downloaded / total_size
-                            await tracker.update(
-                                "📥 Скачивание", 
-                                progress,
-                                stage_estimate_sec=(total_size / (1024 * 1024)) / 10  # ~10 МБ/с
-                            )
+        await download_video(video_url, input_path)
     except Exception as e:
         print(f"[VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        await tracker.finish(success=False)
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {type(e).__name__}: {e}")
         return
-    
-    await tracker.stage_complete("📥 Скачивание")
-    
-    # Защита сервера: длинные видео
-    try:
-        from core import get_video_duration
-        dur = await asyncio.to_thread(get_video_duration, input_path)
-        if dur > MAX_FULL_VIDEO_SEC:
-            await tracker.finish(success=False)
-            await bot.send_message(
-                chat_id,
-                "⏱ Видео длиннее 30 минут — полное субтитрирование займёт часы.\n"
-                "Нажми «🎬 Найти хайлайты» и отправь это видео ещё раз: "
-                "я найду лучшие моменты и нарежу клипы с субтитрами."
-            )
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            return
-    except Exception:
-        pass
-    
-    # Обработка с прогрессом
-    await tracker.update("🎬 Подготовка", 0.0)
-    
-    try:
-        from core import process_video
-        
-        # Устанавливаем callback для прогресса из core.py
-        def progress_callback(stage: str, progress: float, estimate: float):
-            """Синхронный callback — запускает async update в event loop."""
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        tracker.update(stage, progress, estimate), loop
-                    )
-            except Exception as e:
-                print(f"[progress_callback] error: {e}")
 
-        set_progress_callback(progress_callback)
-        
-        if PROCESS_LOCK.locked():
-            await tracker.update("⏳ В очереди", 0.0)
-        
-        await PROCESS_LOCK.acquire()
-        try:
-            result = await asyncio.to_thread(process_video, input_path, str(user_id), is_premium)
-        finally:
-            PROCESS_LOCK.release()
-        
-        # Отключаем callback
-        set_progress_callback(None)
-        
+    # Проверка длины
+    if await check_video_length(input_path, chat_id, status_id, is_admin):
+        return
+
+    # Обработка
+    await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео...")
+    try:
+        result = await asyncio.to_thread(engine.process_video, input_path, str(user_id), is_premium)
     except subprocess.CalledProcessError as e:
         err = (e.stderr or "")[:500]
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, f"❌ Ошибка ffmpeg:\n{err}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка ffmpeg:\n{err}")
         return
     except Exception as e:
         print(f"[PROCESS VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        await tracker.finish(success=False)
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {e}")
         return
-    
-    # Отправка видео
-    await tracker.update("📤 Отправка", 0.0)
-    sent = await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
-    
+
+    # Отправка
+    await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")
+    await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
+
     if result.get("srt_path"):
         srt_path = result["srt_path"]
         txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
@@ -290,16 +269,18 @@ async def handle_video_by_token(chat_id: int, user_id: int, att: dict):
         except Exception:
             txt_path = srt_path
         await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
-    
+
     if not is_admin:
         await increment_video_counter(user, session)
-    
-    await tracker.finish(success=True)
+
+    await bot.edit_message(chat_id, status_id, "✅ Готово!")
 
 
+# ------------------------------------------------------------
+# Обработчик хайлайтов
+# ------------------------------------------------------------
 async def handle_find_highlights_start(chat_id: int, user_id: int):
-    from highlight_states import set_awaiting_video
-    set_awaiting_video(user_id, chat_id)
+    session_manager.set_awaiting_video(user_id, chat_id)
     await bot.send_message(
         chat_id,
         "🎬 *Поиск хайлайтов*\n\n"
@@ -308,8 +289,9 @@ async def handle_find_highlights_start(chat_id: int, user_id: int):
         "⏱️ Сканирование займёт 2-4 минуты."
     )
 
+
 async def handle_scan_video(chat_id: int, user_id: int, att: dict):
-    """Этап 1: скачивает видео и быстро ищет крутые моменты (без Whisper)."""
+    """Этап 1: скачивает видео и ищет крутые моменты."""
     is_admin = user_id in ADMIN_IDS
 
     async with async_session_max() as session:
@@ -322,91 +304,45 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
             )
             return
 
-    status_id = await bot.send_message(chat_id, "🎬 Сканирование видео")
-    tracker = ProgressTracker(bot, chat_id, status_id)
+    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
 
     size = att.get("size") or 0
     if size and size > 2_500_000_000:
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
+        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
         return
 
     video_url = att.get("url")
     if not video_url and att.get("token"):
         video_url = await bot.get_video_url(att["token"])
     if not video_url:
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, "❌ Не удалось получить ссылку на видео.")
+        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
         return
 
     os.makedirs("downloads", exist_ok=True)
     input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
 
-    # Скачивание с прогрессом
     try:
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session_http:
-            async with session_http.get(video_url) as r:
-                if r.status != 200:
-                    raise Exception(f"HTTP {r.status}")
-                
-                total_size = int(r.headers.get('content-length', 0))
-                downloaded = 0
-                
-                with open(input_path, "wb") as f:
-                    async for chunk in r.content.iter_chunked(1024 * 1024):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        if total_size > 0:
-                            progress = downloaded / total_size
-                            await tracker.update(
-                                "📥 Скачивание",
-                                progress,
-                                stage_estimate_sec=(total_size / (1024 * 1024)) / 10
-                            )
+        await download_video(video_url, input_path)
     except Exception as e:
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, f"❌ Ошибка скачивания: {e}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
         return
 
-    await tracker.stage_complete("📥 Скачивание")
+    await bot.edit_message(chat_id, status_id, "🔍 Сканирую на крутые моменты (2-4 минуты)...")
 
-
-    # Сканирование с прогрессом
     try:
-        from core import scan_video_for_highlights
-        
-        # ВАЖНО: callback должен быть синхронным, так как core.py вызывает его из sync-функции
-        def progress_callback(stage: str, progress: float, estimate: float):
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        tracker.update(stage, progress, estimate), loop
-                    )
-            except Exception as e:
-                print(f"[progress_callback scan] error: {e}")
-
-        set_progress_callback(progress_callback)
-        
-        result = await asyncio.to_thread(scan_video_for_highlights, input_path, 5)
-        set_progress_callback(None) # Сбрасываем после завершения
-        
+        result = await asyncio.to_thread(engine.scan_highlights, input_path, 5)
     except Exception as e:
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, f"❌ Ошибка сканирования: {e}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {e}")
         return
 
     moments = result.get("moments", [])
     if not moments:
-        await tracker.finish(success=False)
-        await bot.send_message(chat_id, "😕 Не нашёл ярких моментов в этом видео.")
+        await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
         if os.path.exists(input_path):
             os.remove(input_path)
         return
 
-    from highlight_states import set_awaiting_selection
-    set_awaiting_selection(user_id, chat_id, input_path, moments)
+    session_manager.set_awaiting_selection(user_id, chat_id, input_path, moments)
 
     lines = ["🎬 *Нашёл крутые моменты!*\n"]
     for i, m in enumerate(moments, 1):
@@ -416,141 +352,74 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
     lines.append("Напиши номера через запятую (например: 1, 3)")
     lines.append("/cancel — отмена.")
 
-    await tracker.finish(success=True)
-    await bot.send_message(chat_id, "\n".join(lines))
+    await bot.edit_message(chat_id, status_id, "\n".join(lines))
+
 
 async def handle_select_moments(chat_id: int, user_id: int, text: str):
     """Обрабатывает выбор моментов пользователем."""
-    from highlight_states import get_state, clear_state
-    
-    state = get_state(user_id)
+    state = session_manager.get_state(user_id)
     if not state:
         await bot.send_message(chat_id, "❌ Сначала нажми '🎬 Найти хайлайты' и отправь видео.")
         return
 
     if text.strip().lower() == "/cancel":
-        clear_state(user_id)
-        if os.path.exists(state["video_path"]):
-            os.remove(state["video_path"])
+        session_manager.clear_state(user_id)
+        if os.path.exists(state.video_path):
+            os.remove(state.video_path)
         await bot.send_message(chat_id, "❌ Отменено.", reply_markup=main_menu_kb())
         return
 
-    # Парсим номера
     try:
         selected_indices = [int(x.strip()) - 1 for x in text.split(",")]
     except ValueError:
         await bot.send_message(chat_id, "❌ Введи номера через запятую (например: 1, 3, 5)")
         return
 
-    moments = state["moments"]
-    valid_indices = [i for i in selected_indices if 0 <= i < len(moments)]
-    
+    valid_indices = [i for i in selected_indices if 0 <= i < len(state.moments)]
     if not valid_indices:
-        await bot.send_message(chat_id, f"❌ Нет таких моментов. Доступно от 1 до {len(moments)}.")
+        await bot.send_message(chat_id, f"❌ Нет таких моментов. Доступно от 1 до {len(state.moments)}.")
         return
 
     if len(valid_indices) > 3:
         await bot.send_message(chat_id, "❌ Можно выбрать максимум 3 момента.")
         return
 
-        status_id = await bot.send_message(chat_id, f"🎬 Нарезаю {len(valid_indices)} клип(ов)...")
-    
-    # Создаём трекер и для нарезки!
-    tracker = ProgressTracker(bot, chat_id, status_id)
-    await tracker.update("⚙️ Подготовка к нарезке", 0.0)
+    status_id = await bot.send_message(chat_id, f"🎬 Нарезаю {len(valid_indices)} клип(ов) с субтитрами...")
 
-    is_premium = False
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
         is_premium = user.active_sub != "default"
-        if not (user_id in ADMIN_IDS):
+        if user_id not in ADMIN_IDS:
             await increment_video_counter(user, session)
 
-    from core import process_video, cut_clip, set_progress_callback
     clips = []
-
-    # Устанавливаем тот же синхронный callback
-    def progress_callback(stage: str, progress: float, estimate: float):
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    tracker.update(stage, progress, estimate), loop
-                )
-        except Exception as e:
-            print(f"[progress_callback select] error: {e}")
-
-    set_progress_callback(progress_callback)
-    await PROCESS_LOCK.acquire()
-
     try:
         for idx in valid_indices:
-            moment = moments[idx]
-            clip_path = state["video_path"].replace(".mp4", f"_clip_{idx}.mp4")
-            
-            # Нарезаем клип
-            await tracker.update(f"✂️ Нарезка клипа {idx+1}/{len(valid_indices)}", 0.0)
-            await asyncio.to_thread(cut_clip, state["video_path"], moment["start"], moment["end"], clip_path)
-            
-            # Обрабатываем с субтитрами (тут сработает callback из core.py)
-            await tracker.update(f"🎤 Обработка клипа {idx+1}/{len(valid_indices)}", 0.0)
-            result = await asyncio.to_thread(process_video, clip_path, str(user_id), is_premium)
+            moment = state.moments[idx]
+            clip_path = state.video_path.replace(".mp4", f"_clip_{idx}.mp4")
+            await asyncio.to_thread(engine.cut_clip, state.video_path, moment["start"], moment["end"], clip_path)
+            result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium)
             clips.append(result["video_path"])
-            
-            # Удаляем промежуточный клип без субтитров
             if os.path.exists(clip_path):
                 os.remove(clip_path)
-
     except Exception as e:
-        await tracker.finish(success=False)
-        if status_id:
-            await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {e}")
-        clear_state(user_id)
-        if os.path.exists(state["video_path"]):
-            os.remove(state["video_path"])
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {e}")
+        session_manager.clear_state(user_id)
+        if os.path.exists(state.video_path):
+            os.remove(state.video_path)
         return
 
-    finally:
-        PROCESS_LOCK.release()
-        set_progress_callback(None) # Обязательно сбрасываем!
-
-    # Отправляем клипы
-    await tracker.update("📤 Отправка клипов", 0.0)
+    await bot.edit_message(chat_id, status_id, "📤 Отправляю клипы...")
     for i, clip in enumerate(clips, 1):
         await bot.send_video(chat_id, clip, caption=f"✅ Клип #{i}")
         if os.path.exists(clip):
             os.remove(clip)
 
-    # Очистка
-    clear_state(user_id)
-    if os.path.exists(state["video_path"]):
-        os.remove(state["video_path"])
+    session_manager.clear_state(user_id)
+    if os.path.exists(state.video_path):
+        os.remove(state.video_path)
 
-    await tracker.finish(success=True)
-
-
-def extract_video_attachment(attachments: list):
-    """Ищет видео среди вложений type=video и type=file (файл без сжатия)."""
-    for att in attachments:
-        t = str(att.get("type", "")).lower()
-        payload = att.get("payload") or {}
-
-        # MAX кладёт filename/size то в payload, то рядом — читаем отовсюду
-        name = str(payload.get("filename") or att.get("filename") or "").lower()
-        size = payload.get("size") or att.get("size") or 0
-        url = payload.get("url")
-        token = payload.get("token")
-
-        if t == "video":
-            if token or url:
-                return {"kind": "video", "token": token, "url": url,
-                        "filename": name, "size": size}
-
-        if t == "file":
-            if name.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
-                return {"kind": "file", "token": token, "url": url,
-                        "filename": name, "size": size}
-    return None
+    await bot.edit_message(chat_id, status_id, "✅ Готово!")
 
 
 # ------------------------------------------------------------
@@ -561,7 +430,6 @@ async def handle_max_webhook(request: web.Request):
         data = await request.json()
         update_type = data.get("update_type") or data.get("type")
 
-        # --- bot_started ---
         if update_type == "bot_started":
             user_id = int(data.get("user", {}).get("user_id", 0))
             chat_id = int(data.get("chat_id", 0))
@@ -569,7 +437,6 @@ async def handle_max_webhook(request: web.Request):
                 await handle_start(chat_id, user_id)
             return web.Response(text="OK")
 
-        # --- message_created ---
         if update_type == "message_created":
             msg = data.get("message", {})
             user_id = int(msg.get("sender", {}).get("user_id", 0))
@@ -581,7 +448,6 @@ async def handle_max_webhook(request: web.Request):
             if not user_id or not chat_id:
                 return web.Response(text="OK")
 
-            # Команды
             if text.startswith("/start"):
                 await handle_start(chat_id, user_id)
                 return web.Response(text="OK")
@@ -604,7 +470,6 @@ async def handle_max_webhook(request: web.Request):
                 if user_id not in ADMIN_IDS:
                     await bot.send_message(chat_id, "Недостаточно прав.")
                     return web.Response(text="OK")
-                
                 total, paid, with_email = await get_users_stats()
                 await bot.send_message(
                     chat_id,
@@ -623,29 +488,26 @@ async def handle_max_webhook(request: web.Request):
                     user = await get_or_create_user(session, user_id, chat_id)
                 await handle_show_subscriptions(chat_id)
                 return web.Response(text="OK")
-            
 
-                        # --- Хайлайты: пользователь выбирает моменты номерами ---
-            from highlight_states import get_state, clear_state
-            state = get_state(user_id)
-            if state and state["stage"] == "awaiting_selection" and text:
+            # Хайлайты: пользователь выбирает моменты
+            state = session_manager.get_state(user_id)
+            if state and state.stage == "awaiting_selection" and text:
                 asyncio.create_task(handle_select_moments(chat_id, user_id, text))
                 return web.Response(text="OK")
 
-            # --- Видео: ловим и type=video, и type=file ---
+            # Видео
             att_info = extract_video_attachment(attachments)
             if attachments and not att_info:
-                print("[MAX] attachments:", attachments, flush=True)  # дебаг структуры
+                print("[MAX] attachments:", attachments, flush=True)
 
             if att_info:
-                stage = state["stage"] if state else None
+                stage = state.stage if state else None
                 if stage == "awaiting_selection":
-                    # прислал новое видео прямо во время выбора — начинаем скан заново
-                    old = get_state(user_id)
-                    clear_state(user_id)
-                    if old and os.path.exists(old.get("video_path", "")):
+                    old = session_manager.get_state(user_id)
+                    session_manager.clear_state(user_id)
+                    if old and os.path.exists(old.video_path):
                         try:
-                            os.remove(old["video_path"])
+                            os.remove(old.video_path)
                         except Exception:
                             pass
                     stage = "awaiting_video"
@@ -655,8 +517,8 @@ async def handle_max_webhook(request: web.Request):
                     asyncio.create_task(handle_video_by_token(chat_id, user_id, att_info))
                 return web.Response(text="OK")
 
-            
-        # --- message_callback ---
+            return web.Response(text="OK")
+
         if update_type == "message_callback":
             cb = data.get("callback", {})
             payload = cb.get("payload", "")
@@ -690,7 +552,7 @@ async def handle_max_webhook(request: web.Request):
 
 
 # ------------------------------------------------------------
-# Вебхук ЮKassa для MAX
+# Вебхук ЮKassa
 # ------------------------------------------------------------
 async def handle_yookassa_webhook_max(request: web.Request):
     try:
@@ -699,7 +561,7 @@ async def handle_yookassa_webhook_max(request: web.Request):
             return web.Response(text="OK")
         meta = data.get("object", {}).get("metadata", {})
         if meta.get("platform") != "max":
-            return web.Response(text="OK")   # не наш платёж
+            return web.Response(text="OK")
 
         user_id = int(meta.get("user_id"))
         sub_id = meta.get("sub_id")
@@ -707,7 +569,6 @@ async def handle_yookassa_webhook_max(request: web.Request):
         async with async_session_max() as session:
             result = await activate_subscription(session, user_id, sub_id)
             if result:
-                # отправляем уведомление
                 async with async_session_max() as s2:
                     user = await get_or_create_user(s2, user_id)
                     if user.chat_id:
@@ -746,14 +607,12 @@ async def main():
     await init_db_max()
     await register_webhook()
 
-    # Планировщик
     scheduler.add_job(reset_all_daily_limits, CronTrigger(hour=0, minute=30, timezone=moscow_tz),
                       id="daily_reset", replace_existing=True)
     scheduler.add_job(check_expired_subscriptions, CronTrigger(hour=1, minute=0, timezone=moscow_tz),
                       id="check_expired", replace_existing=True)
     scheduler.start()
 
-    # Веб-сервер
     app = web.Application()
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
     app.router.add_post("/yookassa-webhook", handle_yookassa_webhook_max)

@@ -239,6 +239,7 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             os.remove(state.video_path)
         return
 
+    # Отправляем клипы (редактируем то же сообщение)
     await bot.edit_message(chat_id, status_id, "📤 Отправляю клипы...")
     for i, clip in enumerate(clips, 1):
         await bot.send_video(chat_id, clip, caption=f"✅ Клип #{i}")
@@ -254,8 +255,6 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
 
 async def start_processing(chat_id: int, user_id: int):
     """Запускает обработку видео с выбранными настройками."""
-    from app import session_manager
-    
     state = session_manager.get_state(user_id)
     if not state or not state.video_path:
         await bot.send_message(chat_id, "❌ Видео не найдено. Отправь видео ещё раз.")
@@ -264,19 +263,19 @@ async def start_processing(chat_id: int, user_id: int):
     options = state.options
     video_path = state.video_path
     
-    # Удаляем сообщение с клавиатурой
-    await bot.send_message(chat_id, "⚙️ Начинаю обработку...")
+    # Первое сообщение — сохраняем ID для дальнейшего редактирования
+    status_id = await bot.send_message(chat_id, "⚙️ Начинаю обработку...")
     
     try:
         if options.mode == "highlights":
             # Режим хайлайтов: сканируем и показываем моменты
-            await bot.send_message(chat_id, "🔍 Сканирую видео на крутые моменты (2-4 минуты)...")
+            await bot.edit_message(chat_id, status_id, "🔍 Сканирую видео на крутые моменты (2-4 минуты)...")
             
             result = await asyncio.to_thread(engine.scan_highlights, video_path, MAX_HIGHLIGHTS)
             moments = result.get("moments", [])
             
             if not moments:
-                await bot.send_message(chat_id, "😕 Не нашёл ярких моментов в этом видео.")
+                await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
                 session_manager.clear_state(user_id)
                 return
             
@@ -290,11 +289,11 @@ async def start_processing(chat_id: int, user_id: int):
             lines.append("Напиши номера через запятую (например: 1, 3)")
             lines.append("/cancel — отмена.")
             
-            await bot.send_message(chat_id, "\n".join(lines))
+            await bot.edit_message(chat_id, status_id, "\n".join(lines))
         
         elif options.mode == "full":
             # Режим полного субтитрирования
-            await bot.send_message(chat_id, "🎬 Обрабатываю видео (это займёт время)...")
+            await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео (это займёт время)...")
             
             is_premium = False
             async with async_session_max() as session:
@@ -305,7 +304,7 @@ async def start_processing(chat_id: int, user_id: int):
             
             result = await asyncio.to_thread(engine.process_video, video_path, str(user_id), is_premium)
             
-            await bot.send_message(chat_id, "📤 Отправляю видео...")
+            await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")
             await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
             
             if result.get("srt_path"):
@@ -318,11 +317,11 @@ async def start_processing(chat_id: int, user_id: int):
                 await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
             
             session_manager.clear_state(user_id)
-            await bot.send_message(chat_id, "✅ Готово!")
+            await bot.edit_message(chat_id, status_id, "✅ Готово!")
     
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
         logger.error(f"[PROCESSING ERROR] {type(e).__name__}: {e}\n{error_details}")
-        await bot.send_message(chat_id, f"❌ Ошибка обработки: {type(e).__name__}: {str(e)[:200]}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка обработки: {type(e).__name__}: {str(e)[:200]}")
         session_manager.clear_state(user_id)

@@ -257,7 +257,8 @@ async def start_processing(chat_id: int, user_id: int):
     """Запускает обработку видео с выбранными настройками."""
     state = session_manager.get_state(user_id)
     if not state or not state.video_path:
-        await bot.send_message(chat_id, "❌ Видео не найдено. Отправь видео ещё раз.")
+        logger.warning(f"[PROCESSING] Видео не найдено для user_id={user_id}. Возможно, обработка уже завершена.")
+        await bot.send_message(chat_id, "ℹ️ Обработка уже завершена или видео не найдено. Отправь новое видео.")
         return
     
     options = state.options

@@ -2,6 +2,7 @@
 
 import asyncio
 from aiohttp import web
+import logging
 from apscheduler.triggers.cron import CronTrigger
 
 from database_max import init_db_max
@@ -10,6 +11,29 @@ from config import MAX_WEBHOOK_URL, WEBHOOK_PATH, PORT, MOSCOW_TZ
 from app import bot, scheduler
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
+
+
+# ============================================================
+# НАСТРОЙКА ЛОГИРОВАНИЯ
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Отключаем спам от aiohttp.access
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+logging.getLogger("aiohttp.server").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("faster_whisper").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+# ============================================================
+
 
 
 async def register_webhook():

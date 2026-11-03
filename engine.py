@@ -82,11 +82,12 @@ class VideoEngine:
     def scan_highlights(self, video_path: str, max_moments: int = 5) -> Dict:
         """Возвращает список таймкодов крутых моментов."""
         v_path = Path(video_path).resolve()
-        audio_tmp = v_path.with_suffix("_scan.wav")
+        # ИСПРАВЛЕНИЕ: правильно создаём имя файла
+        audio_tmp = v_path.parent / f"{v_path.stem}_scan.wav"
         
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_tmp)],
-                           check=True, capture_output=True, text=True)
+                        check=True, capture_output=True, text=True)
             moments = self._find_energy_peaks(str(audio_tmp))
             duration = self.get_video_duration(str(v_path))
             clips = self._select_moments(moments, duration, count=max_moments)

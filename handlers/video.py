@@ -5,6 +5,7 @@ import os
 import subprocess
 import traceback
 import uuid
+import logging
 
 from database_max import async_session_max
 from services_max import (
@@ -15,6 +16,8 @@ from services_max import (
 from app import bot, engine, session_manager
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
 from utils import extract_video_attachment, download_video, format_moment_time
+
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------
@@ -86,12 +89,13 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
         result = await asyncio.to_thread(engine.process_video, input_path, str(user_id), is_premium)
     except subprocess.CalledProcessError as e:
         err = (e.stderr or "")[:500]
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка ffmpeg:\n{err}")
+        logger.error(f"[FFMPEG ERROR] {err}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка ffmpeg:\n{err[:200]}")
         return
     except Exception as e:
-        print(f"[PROCESS VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
-        traceback.print_exc()
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"[PROCESS VIDEO ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка: {type(e).__name__}: {str(e)[:200]}")
         return
 
     # Отправка
@@ -172,7 +176,12 @@ async def handle_scan_video(chat_id: int, user_id: int, att: dict):
     try:
         result = await asyncio.to_thread(engine.scan_highlights, input_path, MAX_HIGHLIGHTS)
     except Exception as e:
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[SCAN ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:200]}")
+        if os.path.exists(input_path):
+            os.remove(input_path)
         return
 
     moments = result.get("moments", [])

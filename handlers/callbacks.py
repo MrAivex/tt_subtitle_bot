@@ -10,6 +10,24 @@ from handlers.commands import (
 from handlers.video import start_processing
 
 
+async def _update_keyboard(chat_id: int, state):
+    """Обновляет клавиатуру настроек."""
+    if not state:
+        return
+    
+    text = "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':"
+    kb = processing_options_kb(
+        has_webcam=state.options.has_webcam,
+        format_mode=state.options.format
+    )
+    
+    if state.message_id:
+        await bot.edit_message(chat_id, state.message_id, text, reply_markup=kb)
+    else:
+        # Fallback: если message_id нет, отправляем новое сообщение
+        await bot.send_message(chat_id, text, reply_markup=kb)
+
+
 async def handle_callback(chat_id: int, user_id: int, payload: str):
     """Роутинг callback'ов по payload."""
     state = session_manager.get_state(user_id)
@@ -34,63 +52,23 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
     elif payload.startswith("mode:"):
         mode = payload.split(":")[1]
         session_manager.update_options(user_id, mode=mode)
-        if state:
-            await bot.edit_message(
-                chat_id, state.chat_id,
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=state.options.has_webcam,
-                    format_mode=state.options.format
-                )
-            )
+        await _update_keyboard(chat_id, state)
     
     elif payload == "webcam:yes":
         session_manager.update_options(user_id, has_webcam=True)
-        if state:
-            await bot.edit_message(
-                chat_id, state.chat_id,
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=True,
-                    format_mode=state.options.format
-                )
-            )
+        await _update_keyboard(chat_id, state)
     
     elif payload == "webcam:no":
         session_manager.update_options(user_id, has_webcam=False)
-        if state:
-            await bot.edit_message(
-                chat_id, state.chat_id,
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=False,
-                    format_mode=state.options.format
-                )
-            )
+        await _update_keyboard(chat_id, state)
     
     elif payload == "format:original":
         session_manager.update_options(user_id, format="original")
-        if state:
-            await bot.edit_message(
-                chat_id, state.chat_id,
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=state.options.has_webcam,
-                    format_mode="original"
-                )
-            )
+        await _update_keyboard(chat_id, state)
     
     elif payload == "format:vertical":
         session_manager.update_options(user_id, format="vertical_9_16")
-        if state:
-            await bot.edit_message(
-                chat_id, state.chat_id,
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=state.options.has_webcam,
-                    format_mode="vertical_9_16"
-                )
-            )
+        await _update_keyboard(chat_id, state)
     
     elif payload == "start_processing":
         await start_processing(chat_id, user_id)

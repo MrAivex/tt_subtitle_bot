@@ -70,11 +70,15 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
     session_manager.set_video_path(user_id, input_path)
 
     from keyboards import processing_options_kb
-    await bot.edit_message(
+    msg_id = await bot.edit_message(
         chat_id, status_id,
         "🎬 Видео скачано! Выбери параметры обработки:",
         reply_markup=processing_options_kb()
     )
+
+    # Сохраняем message_id для редактирования
+    if msg_id:
+        session_manager.get_state(user_id).message_id = msg_id
 
 
 # ------------------------------------------------------------

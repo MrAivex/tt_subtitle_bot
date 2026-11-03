@@ -17,6 +17,7 @@ class SessionState:
     video_token: str = ""  # токен видео от MAX
     moments: List[Dict] = field(default_factory=list)
     options: ProcessingOptions = field(default_factory=ProcessingOptions)
+    message_id: str = ""  # ID сообщения с клавиатурой настроек
 
 class SessionManager:
     def __init__(self):

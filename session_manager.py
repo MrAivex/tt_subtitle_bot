@@ -21,6 +21,7 @@ class SessionState:
     moments: List[Dict] = field(default_factory=list)
     options: ProcessingOptions = field(default_factory=ProcessingOptions)
     message_id: str = ""  # ID сообщения с клавиатурой
+    processing: bool = False  # ← НОВОЕ: защита от повторных запусков
 
 
 class SessionManager:
@@ -57,3 +58,13 @@ class SessionManager:
             import os
             if os.path.exists(state.video_path):
                 os.remove(state.video_path)
+
+    def clear_state_if_same_video(self, user_id: int, video_path: str):
+        """Чистит состояние ТОЛЬКО если это та же сессия."""
+        state = self._states.get(user_id)
+        if state and state.video_path == video_path:
+            self.clear_state(user_id)
+        else:
+            import os
+            if os.path.exists(video_path):
+                os.remove(video_path)

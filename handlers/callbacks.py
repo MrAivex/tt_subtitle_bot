@@ -1,4 +1,5 @@
 """Обработка callback'ов от inline-кнопок."""
+import asyncio
 
 from app import bot, session_manager
 from keyboards import main_menu_kb, initial_options_kb, highlights_options_kb
@@ -59,12 +60,10 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
             )
     
     elif payload == "choose:full":
-        # Сразу запускаем полное субтитрирование
-        if state and state.message_id:
+        # Запускаем в фоне, вебхук сразу отвечает OK
+        if state and state.message_id and state.stage == "awaiting_options" and not state.processing:
             session_manager.update_options(user_id, mode="full")
-            await start_processing(chat_id, user_id)
-        else:
-            await bot.send_message(chat_id, "❌ Ошибка: состояние не найдено. Отправь видео ещё раз.")
+            asyncio.create_task(start_processing(chat_id, user_id))
     
     # --- Настройки хайлайтов ---
     elif payload == "hl:webcam":
@@ -86,7 +85,8 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
         await _update_highlights_kb(chat_id, state)
     
     elif payload == "hl:start":
-        await start_processing(chat_id, user_id)
+        if state and state.stage == "awaiting_options" and not state.processing:
+            asyncio.create_task(start_processing(chat_id, user_id))
     
     elif payload == "hl:back":
         # Возврат к первому меню

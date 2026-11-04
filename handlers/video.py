@@ -94,81 +94,6 @@ async def handle_find_highlights_start(chat_id: int, user_id: int):
     )
 
 
-# ------------------------------------------------------------
-# Хайлайты: сканирование
-# ------------------------------------------------------------
-async def handle_scan_video(chat_id: int, user_id: int, att: dict):
-    """Этап 1: скачивает видео и ищет крутые моменты."""
-    is_admin = user_id in ADMIN_IDS
-
-    async with async_session_max() as session:
-        user = await get_or_create_user(session, user_id, chat_id)
-        if not is_admin and not can_process_video(user):
-            await bot.send_message(
-                chat_id,
-                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
-                "Возвращайся завтра или оформи подписку через /pay.",
-            )
-            return
-
-    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
-
-    size = att.get("size") or 0
-    if size and size > MAX_FILE_SIZE_BYTES:
-        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
-        return
-
-    video_url = att.get("url")
-    if not video_url and att.get("token"):
-        video_url = await bot.get_video_url(att["token"])
-    if not video_url:
-        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
-        return
-
-    os.makedirs("downloads", exist_ok=True)
-    input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
-
-    try:
-        await download_video(video_url, input_path)
-    except Exception as e:
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
-        return
-
-    await bot.edit_message(chat_id, status_id, "🔍 Сканирую на крутые моменты (2-4 минуты)...")
-
-    try:
-        result = await asyncio.to_thread(engine.scan_highlights, input_path, MAX_HIGHLIGHTS)
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"[SCAN ERROR] {type(e).__name__}: {e}\n{error_details}")
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:200]}")
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        return
-
-    moments = result.get("moments", [])
-    if not moments:
-        await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        return
-
-    session_manager.set_awaiting_selection(user_id, chat_id, input_path, moments)
-
-    lines = ["🎬 *Нашёл крутые моменты!*\n"]
-    for i, m in enumerate(moments, 1):
-        s, e = m["start"], m["end"]
-        lines.append(
-            f"*{i}.* {format_moment_time(s)} – {format_moment_time(e)} "
-            f"({int(e - s)} сек, громкость x{m['energy']})"
-        )
-    lines.append("\nКакие моменты нарезать с субтитрами?")
-    lines.append("Напиши номера через запятую (например: 1, 3)")
-    lines.append("/cancel — отмена.")
-
-    await bot.edit_message(chat_id, status_id, "\n".join(lines))
-
 
 # ------------------------------------------------------------
 # Хайлайты: выбор моментов
@@ -180,10 +105,14 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
         await bot.send_message(chat_id, "❌ Сначала нажми '🎬 Найти хайлайты' и отправь видео.")
         return
 
+    if state.processing:  # уже режем, игнорируем дубли
+        return
+    state.processing = True
+
+    my_video = state.video_path  # ← ЗАФИКСИРОВАЛИ свой файл один раз
+
     if text.strip().lower() == "/cancel":
-        session_manager.clear_state(user_id)
-        if os.path.exists(state.video_path):
-            os.remove(state.video_path)
+        session_manager.clear_state_if_same_video(user_id, my_video)
         from keyboards import main_menu_kb
         await bot.send_message(chat_id, "❌ Отменено.", reply_markup=main_menu_kb())
         return
@@ -191,19 +120,22 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
     try:
         selected_indices = [int(x.strip()) - 1 for x in text.split(",")]
     except ValueError:
+        state.processing = False
         await bot.send_message(chat_id, "❌ Введи номера через запятую (например: 1, 3, 5)")
         return
 
     valid_indices = [i for i in selected_indices if 0 <= i < len(state.moments)]
     if not valid_indices:
+        state.processing = False
         await bot.send_message(chat_id, f"❌ Нет таких моментов. Доступно от 1 до {len(state.moments)}.")
         return
 
     if len(valid_indices) > MAX_CLIPS_PER_REQUEST:
+        state.processing = False
         await bot.send_message(chat_id, f"❌ Можно выбрать максимум {MAX_CLIPS_PER_REQUEST} момента.")
         return
 
-    status_id = await bot.send_message(chat_id, f"🎬 Нарезаю {len(valid_indices)} клип(ов) с субтитрами...")
+    status_id = await bot.send_message(chat_id, f"🎬 Нарезаю {len(valid_indices)} клип(ов)...")
 
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
@@ -215,45 +147,36 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
     try:
         for idx in valid_indices:
             moment = state.moments[idx]
-            clip_path = state.video_path.replace(".mp4", f"_clip_{idx}.mp4")
-            await asyncio.to_thread(engine.cut_clip, state.video_path, moment["start"], moment["end"], clip_path)
-            # Передаём настройки из состояния
+            clip_path = my_video.replace(".mp4", f"_clip_{idx}.mp4")
+            await asyncio.to_thread(engine.cut_clip, my_video, moment["start"], moment["end"], clip_path)
             webcam_box = state.webcam_box if hasattr(state, 'webcam_box') else None
             if state.options.has_subtitles:
                 result = await asyncio.to_thread(
-                    engine.process_video, 
-                    clip_path, 
-                    str(user_id), 
+                    engine.process_video,
+                    clip_path,
+                    str(user_id),
                     is_premium,
                     webcam_box
                 )
             else:
-                # Без субтитров — просто используем нарезанный клип как есть
                 result = {"video_path": clip_path, "srt_path": None}
             clips.append(result["video_path"])
-            if os.path.exists(clip_path):
+            if result["video_path"] != clip_path and os.path.exists(clip_path):
                 os.remove(clip_path)
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
         logger.error(f"[CLIP ERROR] {type(e).__name__}: {e}\n{error_details}")
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка нарезки: {type(e).__name__}: {str(e)[:200]}")
-        session_manager.clear_state(user_id)
-        if os.path.exists(state.video_path):
-            os.remove(state.video_path)
+        session_manager.clear_state_if_same_video(user_id, my_video)
         return
 
-    # Отправляем клипы (редактируем то же сообщение)
     await bot.edit_message(chat_id, status_id, "📤 Отправляю клипы...")
     for i, clip in enumerate(clips, 1):
         await bot.send_video(chat_id, clip, caption=f"✅ Клип #{i}")
         if os.path.exists(clip):
             os.remove(clip)
 
-    session_manager.clear_state(user_id)
-    if os.path.exists(state.video_path):
-        os.remove(state.video_path)
-
+    session_manager.clear_state_if_same_video(user_id, my_video)
     await bot.edit_message(chat_id, status_id, "✅ Готово!")
 
 
@@ -264,7 +187,8 @@ async def start_processing(chat_id: int, user_id: int):
         logger.warning(f"[PROCESSING] Видео не найдено для user_id={user_id}.")
         await bot.send_message(chat_id, "ℹ️ Обработка уже завершена. Отправь новое видео.")
         return
-    
+
+    state.processing = True  # ← блокируем повторные запуски
     options = state.options
     video_path = state.video_path
     
@@ -281,7 +205,7 @@ async def start_processing(chat_id: int, user_id: int):
             
             if not moments:
                 await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
-                session_manager.clear_state(user_id)
+                session_manager.clear_state_if_same_video(user_id, video_path)
                 return
             
             session_manager.set_awaiting_moment_selection(user_id, moments)
@@ -295,6 +219,7 @@ async def start_processing(chat_id: int, user_id: int):
             lines.append("/cancel — отмена.")
             
             await bot.edit_message(chat_id, status_id, "\n".join(lines))
+            state.processing = False  # ← ждём выбор пользователя
         
         elif options.mode == "full":
             # Режим полного субтитрирования
@@ -327,7 +252,7 @@ async def start_processing(chat_id: int, user_id: int):
                 await bot.edit_message(chat_id, status_id, " Отправляю видео...")
                 await bot.send_video(chat_id, video_path, caption="✅ Твоё видео (без субтитров)")
             
-            session_manager.clear_state(user_id)
+            session_manager.clear_state_if_same_video(user_id, video_path)
             await bot.edit_message(chat_id, status_id, "✅ Готово!")
     
     except Exception as e:
@@ -335,4 +260,4 @@ async def start_processing(chat_id: int, user_id: int):
         error_details = traceback.format_exc()
         logger.error(f"[PROCESSING ERROR] {type(e).__name__}: {e}\n{error_details}")
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка обработки: {type(e).__name__}: {str(e)[:200]}")
-        session_manager.clear_state(user_id)
+        session_manager.clear_state_if_same_video(user_id, video_path)

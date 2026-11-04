@@ -1,7 +1,7 @@
 """Обработка callback'ов от inline-кнопок."""
 
 from app import bot, session_manager
-from keyboards import main_menu_kb, processing_options_kb
+from keyboards import main_menu_kb, initial_options_kb, highlights_options_kb
 from handlers.commands import (
     handle_show_subscriptions,
     handle_ask_email,
@@ -10,22 +10,18 @@ from handlers.commands import (
 from handlers.video import start_processing
 
 
-async def _update_keyboard(chat_id: int, state):
-    """Обновляет клавиатуру настроек."""
-    if not state:
+async def _update_highlights_kb(chat_id: int, state):
+    """Обновляет клавиатуру настроек хайлайтов."""
+    if not state or not state.message_id:
         return
     
-    text = "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':"
-    kb = processing_options_kb(
+    text = "⚙️ Настройки нарезки хайлайтов:"
+    kb = highlights_options_kb(
         has_webcam=state.options.has_webcam,
-        format_mode=state.options.format
+        has_subtitles=state.options.has_subtitles,
+        format_mode=state.options.format,
     )
-    
-    if state.message_id:
-        await bot.edit_message(chat_id, state.message_id, text, reply_markup=kb)
-    else:
-        # Fallback: если message_id нет, отправляем новое сообщение
-        await bot.send_message(chat_id, text, reply_markup=kb)
+    await bot.edit_message(chat_id, state.message_id, text, reply_markup=kb)
 
 
 async def handle_callback(chat_id: int, user_id: int, payload: str):
@@ -48,72 +44,52 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
         sub_id = payload.split(":")[1]
         await handle_pay(chat_id, user_id, sub_id)
     
-    # --- Настройки обработки ---
-    elif payload.startswith("mode:"):
-        mode = payload.split(":")[1]
-        session_manager.update_options(user_id, mode=mode)
+    # --- Первый экран: выбор режима ---
+    elif payload == "choose:highlights":
+        session_manager.update_options(user_id, mode="highlights")
         if state and state.message_id:
             await bot.edit_message(
-                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
+                chat_id, state.message_id,
+                "⚙️ Настройки нарезки хайлайтов:",
+                reply_markup=highlights_options_kb(
                     has_webcam=state.options.has_webcam,
+                    has_subtitles=state.options.has_subtitles,
                     format_mode=state.options.format,
-                    mode=state.options.mode
-                )
-            )
-
-    elif payload == "webcam:yes":
-        session_manager.update_options(user_id, has_webcam=True)
-        if state and state.message_id:
-            await bot.edit_message(
-                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=True,
-                    format_mode=state.options.format,
-                    mode=state.options.mode
-                )
-            )
-
-    elif payload == "webcam:no":
-        session_manager.update_options(user_id, has_webcam=False)
-        if state and state.message_id:
-            await bot.edit_message(
-                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=False,
-                    format_mode=state.options.format,
-                    mode=state.options.mode
-                )
-            )
-
-    elif payload == "format:original":
-        session_manager.update_options(user_id, format="original")
-        if state and state.message_id:
-            await bot.edit_message(
-                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=state.options.has_webcam,
-                    format_mode="original",
-                    mode=state.options.mode
-                )
-            )
-
-    elif payload == "format:vertical":
-        session_manager.update_options(user_id, format="vertical_9_16")
-        if state and state.message_id:
-            await bot.edit_message(
-                chat_id, state.message_id,  # ← ИСПРАВЛЕНО
-                "🎬 Параметры обработки обновлены. Выбери остальные настройки или нажми '▶️ Начать обработку':",
-                reply_markup=processing_options_kb(
-                    has_webcam=state.options.has_webcam,
-                    format_mode="vertical_9_16",
-                    mode=state.options.mode
                 )
             )
     
-    elif payload == "start_processing":
+    elif payload == "choose:full":
+        # Сразу запускаем полное субтитрирование
+        session_manager.update_options(user_id, mode="full")
         await start_processing(chat_id, user_id)
+    
+    # --- Настройки хайлайтов ---
+    elif payload == "hl:webcam":
+        if state:
+            session_manager.update_options(user_id, has_webcam=not state.options.has_webcam)
+            await _update_highlights_kb(chat_id, state)
+    
+    elif payload == "hl:subtitles":
+        if state:
+            session_manager.update_options(user_id, has_subtitles=not state.options.has_subtitles)
+            await _update_highlights_kb(chat_id, state)
+    
+    elif payload == "hl:format_original":
+        session_manager.update_options(user_id, format="original")
+        await _update_highlights_kb(chat_id, state)
+    
+    elif payload == "hl:format_vertical":
+        session_manager.update_options(user_id, format="vertical_9_16")
+        await _update_highlights_kb(chat_id, state)
+    
+    elif payload == "hl:start":
+        await start_processing(chat_id, user_id)
+    
+    elif payload == "hl:back":
+        # Возврат к первому меню
+        if state and state.message_id:
+            await bot.edit_message(
+                chat_id, state.message_id,
+                "🎬 Видео скачано! Что сделать?",
+                reply_markup=initial_options_kb()
+            )

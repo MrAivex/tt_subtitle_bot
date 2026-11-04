@@ -1,32 +1,41 @@
-def processing_options_kb(has_webcam: bool = False, format_mode: str = "original", mode: str = "highlights"):
-    """Клавиатура выбора параметров обработки с radio-кнопками."""
-    # Группа 1: Режим обработки (в колонку)
-    mode_highlights = "✅ 🔪 Нарезать хайлайты" if mode == "highlights" else "🔪 Нарезать хайлайты"
-    mode_full = "✅ 📝 Полное субтитрирование" if mode == "full" else "📝 Полное субтитрирование"
+def initial_options_kb():
+    """Первое меню: выбор между хайлайтами и полным субтитрированием."""
+    return [{
+        "type": "inline_keyboard",
+        "payload": {
+            "buttons": [
+                [{"type": "callback", "text": "🔪 Нарезать хайлайты", "payload": "choose:highlights"}],
+                [{"type": "callback", "text": "📝 Наложить субтитры", "payload": "choose:full"}],
+            ]
+        }
+    }]
+
+
+def highlights_options_kb(has_webcam: bool = False, has_subtitles: bool = True, 
+                          format_mode: str = "original"):
+    """Меню настроек нарезки хайлайтов."""
+    # Toggle-кнопки с галочкой/крестиком
+    webcam_text = "✅ Вебка" if has_webcam else "❌ Вебка"
+    subs_text = "✅ Субтитры" if has_subtitles else "❌ Субтитры"
     
-    # Группа 2: Вебка (взаимоисключающие)
-    webcam_yes = "✅ Есть вебка" if has_webcam else "Есть вебка"
-    webcam_no = "Нет вебки" if has_webcam else "✅ Нет вебки"
-    
-    # Группа 3: Формат (взаимоисключающие)
-    format_original = "✅ Исходный формат" if format_mode == "original" else "Исходный формат"
-    format_vertical = "9:16 (вертикально)" if format_mode == "original" else "✅ 9:16 (вертикально)"
+    # Взаимоисключающие кнопки формата
+    format_original = "✅ Исходный" if format_mode == "original" else "Исходный"
+    format_vertical = "✅ 9:16" if format_mode == "vertical_9_16" else "9:16"
     
     return [{
         "type": "inline_keyboard",
         "payload": {
             "buttons": [
-                [{"type": "callback", "text": mode_highlights, "payload": "mode:highlights"}],
-                [{"type": "callback", "text": mode_full, "payload": "mode:full"}],
                 [
-                    {"type": "callback", "text": webcam_yes, "payload": "webcam:yes"},
-                    {"type": "callback", "text": webcam_no, "payload": "webcam:no"}
+                    {"type": "callback", "text": webcam_text, "payload": "hl:webcam"},
+                    {"type": "callback", "text": subs_text, "payload": "hl:subtitles"},
                 ],
                 [
-                    {"type": "callback", "text": format_original, "payload": "format:original"},
-                    {"type": "callback", "text": format_vertical, "payload": "format:vertical"}
+                    {"type": "callback", "text": format_original, "payload": "hl:format_original"},
+                    {"type": "callback", "text": format_vertical, "payload": "hl:format_vertical"},
                 ],
-                [{"type": "callback", "text": "▶️ Начать обработку", "payload": "start_processing"}],
+                [{"type": "callback", "text": "▶️ Начать нарезку", "payload": "hl:start"}],
+                [{"type": "callback", "text": "🔙 Назад", "payload": "hl:back"}],
             ]
         }
     }]

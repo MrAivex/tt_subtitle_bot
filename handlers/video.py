@@ -65,19 +65,19 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {type(e).__name__}: {e}")
         return
 
-    # Сохраняем видео в состояние и показываем меню настроек
+    # Сохраняем видео в состояние и показываем начальное меню
     session_manager.set_awaiting_video(user_id, chat_id)
     session_manager.set_video_path(user_id, input_path)
 
-    from keyboards import processing_options_kb
+    from keyboards import initial_options_kb
     await bot.edit_message(
         chat_id, status_id,
-        "🎬 Видео скачано! Выбери параметры обработки:",
-        reply_markup=processing_options_kb()
+        "🎬 Видео скачано! Что сделать?",
+        reply_markup=initial_options_kb()
     )
 
     # Сохраняем message_id для редактирования
-    session_manager.get_state(user_id).message_id = status_id  # ← ИСПОЛЬЗУЕМ status_id!
+    session_manager.get_state(user_id).message_id = status_id
 
 
 # ------------------------------------------------------------
@@ -219,13 +219,17 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             await asyncio.to_thread(engine.cut_clip, state.video_path, moment["start"], moment["end"], clip_path)
             # Передаём настройки из состояния
             webcam_box = state.webcam_box if hasattr(state, 'webcam_box') else None
-            result = await asyncio.to_thread(
-                engine.process_video, 
-                clip_path, 
-                str(user_id), 
-                is_premium,
-                webcam_box
-            )
+            if state.options.has_subtitles:
+                result = await asyncio.to_thread(
+                    engine.process_video, 
+                    clip_path, 
+                    str(user_id), 
+                    is_premium,
+                    webcam_box
+                )
+            else:
+                # Без субтитров — просто используем нарезанный клип как есть
+                result = {"video_path": clip_path, "srt_path": None}
             clips.append(result["video_path"])
             if os.path.exists(clip_path):
                 os.remove(clip_path)
@@ -257,8 +261,8 @@ async def start_processing(chat_id: int, user_id: int):
     """Запускает обработку видео с выбранными настройками."""
     state = session_manager.get_state(user_id)
     if not state or not state.video_path:
-        logger.warning(f"[PROCESSING] Видео не найдено для user_id={user_id}. Возможно, обработка уже завершена.")
-        await bot.send_message(chat_id, "ℹ️ Обработка уже завершена или видео не найдено. Отправь новое видео.")
+        logger.warning(f"[PROCESSING] Видео не найдено для user_id={user_id}.")
+        await bot.send_message(chat_id, "ℹ️ Обработка уже завершена. Отправь новое видео.")
         return
     
     options = state.options
@@ -293,7 +297,7 @@ async def start_processing(chat_id: int, user_id: int):
             await bot.edit_message(chat_id, status_id, "\n".join(lines))
         
         elif options.mode == "full":
-            # Режим полного субтитрирования
+            # Режим полного субтитрирования — всегда с субтитрами
             await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео (это займёт время)...")
             
             is_premium = False
@@ -303,6 +307,7 @@ async def start_processing(chat_id: int, user_id: int):
                 if user_id not in ADMIN_IDS:
                     await increment_video_counter(user, session)
             
+            # Для полного субтитрирования всегда накладываем субтитры
             result = await asyncio.to_thread(engine.process_video, video_path, str(user_id), is_premium)
             
             await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")

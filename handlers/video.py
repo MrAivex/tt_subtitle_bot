@@ -297,7 +297,7 @@ async def start_processing(chat_id: int, user_id: int):
             await bot.edit_message(chat_id, status_id, "\n".join(lines))
         
         elif options.mode == "full":
-            # Режим полного субтитрирования — всегда с субтитрами
+            # Режим полного субтитрирования
             await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео (это займёт время)...")
             
             is_premium = False
@@ -307,20 +307,25 @@ async def start_processing(chat_id: int, user_id: int):
                 if user_id not in ADMIN_IDS:
                     await increment_video_counter(user, session)
             
-            # Для полного субтитрирования всегда накладываем субтитры
-            result = await asyncio.to_thread(engine.process_video, video_path, str(user_id), is_premium)
-            
-            await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")
-            await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
-            
-            if result.get("srt_path"):
-                srt_path = result["srt_path"]
-                txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
-                try:
-                    os.rename(srt_path, txt_path)
-                except Exception:
-                    txt_path = srt_path
-                await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
+            # Проверяем нужно ли накладывать субтитры
+            if options.has_subtitles:
+                result = await asyncio.to_thread(engine.process_video, video_path, str(user_id), is_premium)
+                
+                await bot.edit_message(chat_id, status_id, "📤 Отправляю видео...")
+                await bot.send_video(chat_id, result["video_path"], caption="✅ Твоё видео с субтитрами!")
+                
+                if result.get("srt_path"):
+                    srt_path = result["srt_path"]
+                    txt_path = srt_path.rsplit(".", 1)[0] + ".txt"
+                    try:
+                        os.rename(srt_path, txt_path)
+                    except Exception:
+                        txt_path = srt_path
+                    await bot.send_document(chat_id, txt_path, caption="📄 Файл субтитров")
+            else:
+                # Без субтитров — просто отправляем исходное видео
+                await bot.edit_message(chat_id, status_id, " Отправляю видео...")
+                await bot.send_video(chat_id, video_path, caption="✅ Твоё видео (без субтитров)")
             
             session_manager.clear_state(user_id)
             await bot.edit_message(chat_id, status_id, "✅ Готово!")

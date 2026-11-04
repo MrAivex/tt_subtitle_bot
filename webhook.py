@@ -76,14 +76,13 @@ async def handle_max_webhook(request: web.Request):
                     # прислал новое видео во время выбора моментов — начинаем заново
                     session_manager.clear_state(user_id)
                     stage = "awaiting_options"
-                if stage == "awaiting_options":
-                    # Видео уже скачано, показываем клавиатуру
-                    asyncio.create_task(handle_video(chat_id, user_id, att_info))
-                else:
-                    asyncio.create_task(handle_video(chat_id, user_id, att_info))
+                
+                # Создаём состояние если нет
+                if not state:
+                    session_manager.set_awaiting_video(user_id, chat_id)
+                
+                asyncio.create_task(handle_video(chat_id, user_id, att_info))
                 return web.Response(text="OK")
-
-            return web.Response(text="OK")
 
         # --- message_callback ---
         if update_type == "message_callback":

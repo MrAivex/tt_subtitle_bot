@@ -60,8 +60,11 @@ async def handle_callback(chat_id: int, user_id: int, payload: str):
     
     elif payload == "choose:full":
         # Сразу запускаем полное субтитрирование
-        session_manager.update_options(user_id, mode="full")
-        await start_processing(chat_id, user_id)
+        if state and state.message_id:
+            session_manager.update_options(user_id, mode="full")
+            await start_processing(chat_id, user_id)
+        else:
+            await bot.send_message(chat_id, "❌ Ошибка: состояние не найдено. Отправь видео ещё раз.")
     
     # --- Настройки хайлайтов ---
     elif payload == "hl:webcam":

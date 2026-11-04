@@ -94,6 +94,81 @@ async def handle_find_highlights_start(chat_id: int, user_id: int):
     )
 
 
+# ------------------------------------------------------------
+# Хайлайты: сканирование
+# ------------------------------------------------------------
+async def handle_scan_video(chat_id: int, user_id: int, att: dict):
+    """Этап 1: скачивает видео и ищет крутые моменты."""
+    is_admin = user_id in ADMIN_IDS
+
+    async with async_session_max() as session:
+        user = await get_or_create_user(session, user_id, chat_id)
+        if not is_admin and not can_process_video(user):
+            await bot.send_message(
+                chat_id,
+                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
+                "Возвращайся завтра или оформи подписку через /pay.",
+            )
+            return
+
+    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео для сканирования...")
+
+    size = att.get("size") or 0
+    if size and size > MAX_FILE_SIZE_BYTES:
+        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
+        return
+
+    video_url = att.get("url")
+    if not video_url and att.get("token"):
+        video_url = await bot.get_video_url(att["token"])
+    if not video_url:
+        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
+        return
+
+    os.makedirs("downloads", exist_ok=True)
+    input_path = f"downloads/max_hl_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+
+    try:
+        await download_video(video_url, input_path)
+    except Exception as e:
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {e}")
+        return
+
+    await bot.edit_message(chat_id, status_id, "🔍 Сканирую на крутые моменты (2-4 минуты)...")
+
+    try:
+        result = await asyncio.to_thread(engine.scan_highlights, input_path, MAX_HIGHLIGHTS)
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[SCAN ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:200]}")
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        return
+
+    moments = result.get("moments", [])
+    if not moments:
+        await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        return
+
+    session_manager.set_awaiting_selection(user_id, chat_id, input_path, moments)
+
+    lines = ["🎬 *Нашёл крутые моменты!*\n"]
+    for i, m in enumerate(moments, 1):
+        s, e = m["start"], m["end"]
+        lines.append(
+            f"*{i}.* {format_moment_time(s)} – {format_moment_time(e)} "
+            f"({int(e - s)} сек, громкость x{m['energy']})"
+        )
+    lines.append("\nКакие моменты нарезать с субтитрами?")
+    lines.append("Напиши номера через запятую (например: 1, 3)")
+    lines.append("/cancel — отмена.")
+
+    await bot.edit_message(chat_id, status_id, "\n".join(lines))
+
 
 # ------------------------------------------------------------
 # Хайлайты: выбор моментов

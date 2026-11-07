@@ -42,58 +42,55 @@ async def handle_max_webhook(request: web.Request):
             if not user_id or not chat_id:
                 return web.Response(text="OK")
 
-            # Команды
-            if text.startswith("/start"):
-                await handle_start(chat_id, user_id)
-                return web.Response(text="OK")
-            if text.startswith("/help"):
-                await handle_help(chat_id)
-                return web.Response(text="OK")
-            if text.startswith("/stats"):
-                await handle_stats(chat_id, user_id, ADMIN_IDS)
-                return web.Response(text="OK")
-            if text.startswith("/email"):
-                await handle_ask_email(chat_id)
-                return web.Response(text="OK")
-            if text.startswith("/pay"):
-                await handle_show_subscriptions(chat_id)
-                return web.Response(text="OK")
+        # Команды
+        if text.startswith("/start"):
+            await handle_start(chat_id, user_id)
+            return web.Response(text="OK")
+        if text.startswith("/help"):
+            await handle_help(chat_id)
+            return web.Response(text="OK")
+        if text.startswith("/stats"):
+            await handle_stats(chat_id, user_id, ADMIN_IDS)
+            return web.Response(text="OK")
+        if text.startswith("/email"):
+            await handle_ask_email(chat_id)
+            return web.Response(text="OK")
+        if text.startswith("/pay"):
+            await handle_show_subscriptions(chat_id)
+            return web.Response(text="OK")
 
+        # --- ВАЖНО: определяем state ДО всех проверок ---
+        state = session_manager.get_state(user_id)
 
-            # --- Ссылка на видео (YouTube, Twitch, TikTok, диски) ---
-            from link_downloader import extract_url, detect_platform
-            url = extract_url(text)
-            if url and detect_platform(url):
-                if state and state.stage == "awaiting_moment_selection":
-                    session_manager.clear_state(user_id)
-                asyncio.create_task(handle_link_download(chat_id, user_id, url))
-                return web.Response(text="OK")
+        # --- Ссылка на видео (YouTube, Twitch, TikTok, диски) ---
+        from link_downloader import extract_url, detect_platform
+        url = extract_url(text)
+        if url and detect_platform(url):
+            if state and state.stage == "awaiting_moment_selection":
+                session_manager.clear_state(user_id)
+            asyncio.create_task(handle_link_download(chat_id, user_id, url))
+            return web.Response(text="OK")
 
+        # Хайлайты: пользователь выбирает моменты
+        if state and state.stage == "awaiting_moment_selection" and text:
+            asyncio.create_task(handle_select_moments(chat_id, user_id, text))
+            return web.Response(text="OK")
 
-            # Хайлайты: пользователь выбирает моменты
-            state = session_manager.get_state(user_id)
-            if state and state.stage == "awaiting_moment_selection" and text:
-                asyncio.create_task(handle_select_moments(chat_id, user_id, text))
-                return web.Response(text="OK")
+        # Видео
+        att_info = extract_video_attachment(attachments)
+        if attachments and not att_info:
+            print("[MAX] attachments:", attachments, flush=True)
 
-            # Видео
-            att_info = extract_video_attachment(attachments)
-            if attachments and not att_info:
-                print("[MAX] attachments:", attachments, flush=True)
-
-            if att_info:
-                stage = state.stage if state else None
-                if stage == "awaiting_moment_selection":
-                    # прислал новое видео во время выбора моментов — начинаем заново
-                    session_manager.clear_state(user_id)
-                    stage = "awaiting_options"
-                
-                # Создаём состояние если нет
-                if not state:
-                    session_manager.set_awaiting_video(user_id, chat_id)
-                
+        if att_info:
+            stage = state.stage if state else None
+            if stage == "awaiting_moment_selection":
+                session_manager.clear_state(user_id)
+                stage = "awaiting_options"
+            if stage == "awaiting_options":
                 asyncio.create_task(handle_video(chat_id, user_id, att_info))
-                return web.Response(text="OK")
+            else:
+                asyncio.create_task(handle_video(chat_id, user_id, att_info))
+            return web.Response(text="OK")
 
         # --- message_callback ---
         if update_type == "message_callback":

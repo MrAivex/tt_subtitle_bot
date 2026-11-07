@@ -1,6 +1,7 @@
 """Точка входа в приложение. Только запуск сервера и планировщика."""
 
 import asyncio
+import subprocess
 from aiohttp import web
 import logging
 from apscheduler.triggers.cron import CronTrigger
@@ -61,6 +62,13 @@ async def register_webhook():
 
 
 async def main():
+    try:
+        subprocess.run(["pip", "install", "-q", "-U", "yt-dlp"], timeout=120)
+        print("✅ yt-dlp обновлён")
+    except Exception as e:
+        print(f"⚠️ Не удалось обновить yt-dlp: {e}")
+
+        
     await init_db_max()
     await register_webhook()
 

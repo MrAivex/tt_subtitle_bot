@@ -27,3 +27,8 @@ MAX_CLIPS_PER_REQUEST = 3            # максимум клипов за одн
 # Планировщик (часовой пояс)
 from pytz import timezone
 MOSCOW_TZ = timezone("Europe/Moscow")
+
+# Прокси для заблокированных в РФ площадок (пусто = без прокси)
+DOWNLOAD_PROXY = os.getenv("DOWNLOAD_PROXY", "")
+# Домены, которые обязательно идут через прокси
+PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")

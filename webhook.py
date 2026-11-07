@@ -14,7 +14,7 @@ from handlers.commands import (
     handle_ask_email,
     handle_show_subscriptions,
 )
-from handlers.video import handle_video, handle_scan_video, handle_select_moments
+from handlers.video import handle_video, handle_scan_video, handle_select_moments, handle_link_download
 
 
 async def handle_max_webhook(request: web.Request):
@@ -58,6 +58,17 @@ async def handle_max_webhook(request: web.Request):
             if text.startswith("/pay"):
                 await handle_show_subscriptions(chat_id)
                 return web.Response(text="OK")
+
+
+            # --- Ссылка на видео (YouTube, Twitch, TikTok, диски) ---
+            from link_downloader import extract_url, detect_platform
+            url = extract_url(text)
+            if url and detect_platform(url):
+                if state and state.stage == "awaiting_moment_selection":
+                    session_manager.clear_state(user_id)
+                asyncio.create_task(handle_link_download(chat_id, user_id, url))
+                return web.Response(text="OK")
+
 
             # Хайлайты: пользователь выбирает моменты
             state = session_manager.get_state(user_id)

@@ -336,3 +336,49 @@ async def start_processing(chat_id: int, user_id: int):
         logger.error(f"[PROCESSING ERROR] {type(e).__name__}: {e}\n{error_details}")
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка обработки: {type(e).__name__}: {str(e)[:200]}")
         session_manager.clear_state_if_same_video(user_id, video_path)
+
+
+async def handle_link_download(chat_id: int, user_id: int, url: str):
+    """Скачивает видео по ссылке и показывает меню обработки."""
+    is_admin = user_id in ADMIN_IDS
+    async with async_session_max() as session:
+        user = await get_or_create_user(session, user_id, chat_id)
+        if not is_admin and not can_process_video(user):
+            await bot.send_message(
+                chat_id,
+                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
+                "Возвращайся завтра или оформи подписку через /pay.",
+            )
+            return
+
+    from link_downloader import detect_platform, download_by_link
+    platform = detect_platform(url)
+
+    status_id = await bot.send_message(
+        chat_id, f"🔗 Распознал: {platform}. Скачиваю (может занять несколько минут)..."
+    )
+
+    os.makedirs("downloads", exist_ok=True)
+    input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+
+    try:
+        final_path = await download_by_link(url, input_path)
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"[LINK ERROR] {type(e).__name__}: {e}\n{error_details}")
+        await bot.edit_message(
+            chat_id, status_id,
+            f"❌ Не удалось скачать: {type(e).__name__}: {str(e)[:150]}",
+        )
+        return
+
+    session_manager.set_awaiting_video(user_id, chat_id)
+    session_manager.set_video_path(user_id, final_path)
+    session_manager.get_state(user_id).message_id = status_id
+
+    from keyboards import initial_options_kb
+    await bot.edit_message(
+        chat_id, status_id,
+        "🎬 Видео скачано! Что сделать?",
+        reply_markup=initial_options_kb(),
+    )

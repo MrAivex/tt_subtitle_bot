@@ -4,6 +4,7 @@ import logging
 import asyncio
 import os
 import hashlib
+import time
 from urllib.parse import urlparse, quote
 
 import aiohttp
@@ -49,6 +50,22 @@ def _needs_proxy(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
+def _progress_hook_factory(tag: str):
+    """Логирует прогресс скачивания раз в 20 секунд."""
+    last = {"t": 0.0}
+    def hook(d):
+        if d.get("status") != "downloading":
+            return
+        now = time.time()
+        if now - last["t"] < 20:
+            return
+        last["t"] = now
+        done = d.get("downloaded_bytes") or 0
+        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+        pct = f"{done / total * 100:.0f}%" if total else "?"
+        logger.info(f"[LINK] {tag}: {done / 1e6:.1f} / {total / 1e6:.1f} MB ({pct})")
+    return hook
+
 
 def _ytdlp_download_sync(url: str, output_path: str) -> str:
     import yt_dlp
@@ -60,10 +77,12 @@ def _ytdlp_download_sync(url: str, output_path: str) -> str:
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "socket_timeout": 30,
+        "socket_timeout": 15,
         "retries": 3,
         "fragment_retries": 3,
         "max_filesize": MAX_FILE_SIZE_BYTES,
+        "concurrent_fragment_downloads": 8,
+        "progress_hooks": [_progress_hook_factory("video")],
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
@@ -138,7 +157,9 @@ def _ytdlp_audio_sync(url: str, stem: str) -> str:
         "outtmpl": stem,
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",  # звук минимального веса
         "noplaylist": True, "quiet": True, "no_warnings": True,
-        "socket_timeout": 30, "retries": 3,
+        "socket_timeout": 15, "retries": 3,
+        "concurrent_fragment_downloads": 8,   # ← 8 параллельных фрагментов HLS
+        "progress_hooks": [_progress_hook_factory("audio")],
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
@@ -166,9 +187,11 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
         "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
-        "socket_timeout": 30, "retries": 3,
+        "socket_timeout": 15, "retries": 3,
         "download_sections": [{"start_time": start, "end_time": end}],
         "force_keyframes_at_cuts": True,
+        "concurrent_fragment_downloads": 8,
+        "progress_hooks": [_progress_hook_factory("clip")],
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY

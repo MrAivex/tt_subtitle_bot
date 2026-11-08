@@ -10,6 +10,7 @@ from database_max import init_db_max
 from services_max import reset_all_daily_limits, check_expired_subscriptions
 from config import MAX_WEBHOOK_URL, WEBHOOK_PATH, PORT, MOSCOW_TZ
 from app import bot, scheduler
+from app import engine
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
 
@@ -92,6 +93,7 @@ async def main():
 
         
     await init_db_max()
+    warmup_task = asyncio.create_task(asyncio.to_thread(lambda: engine.model))
     await register_webhook()
 
     # Планировщик

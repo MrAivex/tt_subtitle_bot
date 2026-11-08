@@ -165,24 +165,26 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                 await asyncio.to_thread(engine.cut_clip, my_video, moment["start"], moment["end"], clip_path)
 
 
-            # Формат 9:16 — перекадрируем ДО субтитров
-            if state.options.format == "vertical_9_16":
-                await bot.edit_message(chat_id, status_id, f"📐 Перекадрирую клип {i}/{len(valid_indices)} в 9:16...")
-                vertical_path = os.path.splitext(clip_path)[0] + "_v.mp4"
-                await asyncio.to_thread(engine.crop_to_vertical, clip_path, vertical_path)
-                if os.path.exists(clip_path):
-                    os.remove(clip_path)
-                clip_path = vertical_path
 
+
+            vertical = state.options.format == "vertical_9_16"
 
             if state.options.has_subtitles:
-                await bot.edit_message(chat_id, status_id, f"🎤 Накладываю субтитры на клип {i}/{len(valid_indices)}...")
+                await bot.edit_message(chat_id, status_id, f"🎤 Обрабатываю клип {i}/{len(valid_indices)}...")
                 webcam_box = getattr(state, "webcam_box", None)
                 with timed(f"клип {i}: whisper + рендер"):
-                    result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium, webcam_box)
+                    result = await asyncio.to_thread(
+                        engine.process_video, clip_path, str(user_id), is_premium, webcam_box, vertical)
                 final_path = result["video_path"]
                 if final_path != clip_path and os.path.exists(clip_path):
                     os.remove(clip_path)
+            elif vertical:
+                await bot.edit_message(chat_id, status_id, f"📐 Перекадрирую клип {i}/{len(valid_indices)} в 9:16...")
+                vertical_path = os.path.splitext(clip_path)[0] + "_v.mp4"
+                with timed(f"клип {i}: кроп 9:16"):
+                    await asyncio.to_thread(engine.crop_to_vertical, clip_path, vertical_path)
+                os.remove(clip_path)
+                final_path = vertical_path
             else:
                 final_path = clip_path
             clips.append(final_path)

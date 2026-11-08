@@ -178,6 +178,7 @@ def _ytdlp_audio_sync(url: str, stem: str) -> str:
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
         "concurrent_fragment_downloads": 8,   # ← 8 параллельных фрагментов HLS
+        "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio")],
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
@@ -215,10 +216,13 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
         "download_sections": [{"start_time": start, "end_time": end}],
-        "force_keyframes_at_cuts": True,
+        # force_keyframes_at_cuts убран: всё равно перекодируем ниже одним проходом
         "concurrent_fragment_downloads": 8,
+        "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
     }
+
+
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
     with yt_dlp.YoutubeDL(opts) as ydl:

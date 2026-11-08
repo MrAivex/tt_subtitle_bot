@@ -25,7 +25,7 @@ class VideoEngine:
     def model(self) -> WhisperModel:
         if self._model is None:
             compute_type = "float16" if self.device == "cuda" else "int8"
-            self._model = WhisperModel("small", device=self.device, compute_type=compute_type)
+            self._model = WhisperModel("small", device=self.device, compute_type=compute_type, cpu_threads=2)
         return self._model
 
     def _get_font_path(self) -> str:
@@ -200,6 +200,15 @@ class VideoEngine:
         
 
 
+    @staticmethod
+    def _vertical_crop_box(w: int, h: int):
+        target = 9 / 16
+        if w / h > target:
+            cw, ch = int(h * target) // 2 * 2, h // 2 * 2
+        else:
+            cw, ch = w // 2 * 2, int(w / target) // 2 * 2
+        return cw, ch, (w - cw) // 2, (h - ch) // 2
+
 
     # ---------- ASS-хелперы ----------
     @staticmethod
@@ -300,7 +309,7 @@ class VideoEngine:
     # ЭТАП 2: ПОЛНАЯ ОБРАБОТКА С СУБТИТРАМИ
     # ==========================================================
     def process_video(self, input_path: str, user_id: str, is_premium: bool = False,
-                      webcam_box: Optional[Dict] = None) -> Dict:
+                      webcam_box: Optional[Dict] = None, vertical: bool = False) -> Dict:
         v_path = Path(input_path).resolve()
         video_dir = v_path.parent
         base_name = v_path.stem
@@ -331,11 +340,19 @@ class VideoEngine:
             all_words = [{"word": w.word.strip(), "start": w.start, "end": w.end}
                          for seg in seg_list if seg.words for w in seg.words]
             if not all_words:
-                subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)],
-                               check=True, capture_output=True, text=True)
+                if vertical:
+                    self.crop_to_vertical(str(v_path), str(output_file))
+                else:
+                    subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)],
+                                   check=True, capture_output=True, text=True)
                 return {"video_path": str(output_file), "srt_path": str(srt_file)}
 
             video_w, video_h = self.get_video_resolution(str(v_path))
+            crop_vf = ""
+            if vertical:
+                cw, ch, cx, cy = self._vertical_crop_box(video_w, video_h)
+                crop_vf = f"crop={cw}:{ch}:{cx}:{cy},"
+                video_w, video_h = cw, ch   # ASS и шрифт считаются от кадра ПОСЛЕ обрезки
             video_duration = self.get_video_duration(str(v_path))
 
             # Шрифт и его размер от размера кадра
@@ -370,7 +387,7 @@ class VideoEngine:
 
             # ass лежит рядом с видео, ffmpeg запускаем из этой папки — путь в фильтре короткий
             fonts_dir = str(Path(font_path).parent)
-            vf = (f"subtitles=filename='{self._ff_escape(ass_file.name)}'"
+            vf = (f"{crop_vf}subtitles=filename='{self._ff_escape(ass_file.name)}'"
                   f":fontsdir='{self._ff_escape(fonts_dir)}'")
 
             cmd = [self.ffmpeg, "-y", "-i", str(v_path),

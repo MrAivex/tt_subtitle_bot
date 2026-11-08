@@ -191,9 +191,16 @@ def _ytdlp_audio_sync(url: str, stem: str) -> str:
 async def download_audio_only(url: str, out_wav: str) -> str:
     """Быстро качает только звук и конвертит в WAV 16 kHz mono."""
     import subprocess
-    raw = await asyncio.to_thread(_ytdlp_audio_sync, url, out_wav[:-4] + "_raw")
-    subprocess.run(["ffmpeg", "-y", "-i", raw, "-ar", "16000", "-ac", "1", out_wav],
-                   check=True, capture_output=True, text=True)
+    from utils import timed
+
+    with timed("аудио: yt-dlp"):
+        raw = await asyncio.to_thread(_ytdlp_audio_sync, url, out_wav[:-4] + "_raw")
+    with timed("аудио: ffmpeg → wav"):
+        await asyncio.to_thread(
+            subprocess.run,
+            ["ffmpeg", "-y", "-i", raw, "-vn", "-ar", "16000", "-ac", "1", out_wav],
+            check=True, capture_output=True, text=True,
+        )
     if os.path.exists(raw):
         os.remove(raw)
     return out_wav

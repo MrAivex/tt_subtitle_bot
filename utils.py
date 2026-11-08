@@ -1,5 +1,21 @@
 import os
 import aiohttp
+import time
+import logging
+from contextlib import contextmanager
+
+
+_tlog = logging.getLogger("timing")
+
+
+@contextmanager
+def timed(label: str):
+    """Пишет в лог, сколько заняла операция."""
+    t = time.perf_counter()
+    try:
+        yield
+    finally:
+        _tlog.info(f"[TIME] {label}: {time.perf_counter() - t:.1f} сек")
 
 
 def extract_video_attachment(attachments: list):

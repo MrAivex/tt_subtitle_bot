@@ -39,6 +39,9 @@ SPAM_LOGGERS = [
     "sqlalchemy", "sqlalchemy.engine",
 ]
 
+logging.getLogger("timing").setLevel(logging.INFO)
+logging.getLogger("link_downloader").setLevel(logging.INFO)
+
 for logger_name in SPAM_LOGGERS:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
 # ============================================================
@@ -86,7 +89,7 @@ async def register_webhook():
 
 async def main():
     ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
-    
+
         
     await init_db_max()
     await register_webhook()

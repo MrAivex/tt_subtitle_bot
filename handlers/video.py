@@ -15,7 +15,7 @@ from services_max import (
 )
 from app import bot, engine, session_manager
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
-from utils import extract_video_attachment, download_video, format_moment_time
+from utils import extract_video_attachment, download_video, format_moment_time, timed
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,8 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                 await bot.edit_message(chat_id, status_id, f"📥 Скачиваю фрагмент {i}/{len(valid_indices)} из интернета...")
                 from link_downloader import download_section
                 clip_path = f"downloads/clip_{user_id}_{idx}_{uuid.uuid4().hex[:6]}.mp4"
-                clip_path = await download_section(state.source_url, moment["start"], moment["end"], clip_path)
+                with timed(f"клип {i}: скачивание фрагмента"):
+                    clip_path = await download_section(state.source_url, moment["start"], moment["end"], clip_path)
             else:
                 # Файл: режем локально
                 await bot.edit_message(chat_id, status_id, f"✂️ Нарезаю клип {i}/{len(valid_indices)}...")
@@ -177,7 +178,8 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             if state.options.has_subtitles:
                 await bot.edit_message(chat_id, status_id, f"🎤 Накладываю субтитры на клип {i}/{len(valid_indices)}...")
                 webcam_box = getattr(state, "webcam_box", None)
-                result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium, webcam_box)
+                with timed(f"клип {i}: whisper + рендер"):
+                    result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium, webcam_box)
                 final_path = result["video_path"]
                 if final_path != clip_path and os.path.exists(clip_path):
                     os.remove(clip_path)
@@ -333,7 +335,8 @@ async def handle_link_download(chat_id: int, user_id: int, url: str):
 
     await bot.edit_message(chat_id, status_id, "🔍 Сканирую дорожку на крутые моменты...")
     try:
-        result = await asyncio.to_thread(engine.scan_audio_wav, wav_path, MAX_HIGHLIGHTS)
+        with timed("сканирование пиков"):
+            result = await asyncio.to_thread(engine.scan_audio_wav, wav_path, MAX_HIGHLIGHTS)
     except Exception as e:
         logger.error(f"[SCAN AUDIO ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}")
         await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:150]}")

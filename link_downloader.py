@@ -4,6 +4,7 @@ import logging
 import asyncio
 import os
 import hashlib
+import shutil
 import time
 from urllib.parse import urlparse, quote
 
@@ -135,12 +136,30 @@ async def _download_core(url: str, output_path: str) -> str:
     return await asyncio.to_thread(_ytdlp_download_sync, url, output_path)
 
 
+def _clone_file(src: str, dst: str) -> str:
+    """Даёт вызывающему свой собственный файл (жёсткая ссылка, иначе копия)."""
+    # путь назначения берём с расширением реально скачанного файла
+    dst = os.path.splitext(dst)[0] + os.path.splitext(src)[1]
+    if os.path.abspath(src) == os.path.abspath(dst):
+        return dst
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+    return dst
+
+
 async def download_by_link(url: str, output_path: str) -> str:
-    """Скачивает видео по ссылке. Одна и та же ссылка одновременно качается только один раз."""
+    """Скачивает видео по ссылке. Одна и та же ссылка одновременно качается один раз,
+    но каждый вызывающий получает свой файл."""
     key = hashlib.md5(url.encode()).hexdigest()
-    if key in _INFLIGHT:
+
+    existing = _INFLIGHT.get(key)
+    if existing:
         logger.info(f"[LINK] Эта ссылка уже качается — присоединяюсь: {url}")
-        return await _INFLIGHT[key]
+        # shield: отмена ожидающего не должна ронять общую загрузку
+        src = await asyncio.shield(existing)
+        return await asyncio.to_thread(_clone_file, src, output_path)
 
     task = asyncio.create_task(_download_core(url, output_path))
     _INFLIGHT[key] = task

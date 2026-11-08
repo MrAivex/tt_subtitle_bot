@@ -104,17 +104,22 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
         await bot.send_message(chat_id, "❌ Сначала нажми '🎬 Найти хайлайты' и отправь видео.")
         return
 
-    if state.processing:  # уже режем, игнорируем дубли
-        return
-    state.processing = True
-
     my_video = state.video_path  # ← ЗАФИКСИРОВАЛИ свой файл один раз
 
+    # 1) Отмена проверяется ПЕРВОЙ, до блокировки
     if text.strip().lower() == "/cancel":
+        if state.processing:
+            await bot.send_message(chat_id, "⏳ Нарезка уже идёт — дождись окончания.")
+            return
         session_manager.clear_state_if_same_video(user_id, my_video)
         from keyboards import main_menu_kb
         await bot.send_message(chat_id, "❌ Отменено.", reply_markup=main_menu_kb())
         return
+
+    # 2) Защита от дублей — только после отмены
+    if state.processing:
+        return
+    state.processing = True
 
     try:
         selected_indices = [int(x.strip()) - 1 for x in text.split(",")]
@@ -158,6 +163,17 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                 clip_path = my_video.replace(".mp4", f"_clip_{idx}.mp4")
                 await asyncio.to_thread(engine.cut_clip, my_video, moment["start"], moment["end"], clip_path)
 
+
+            # Формат 9:16 — перекадрируем ДО субтитров
+            if state.options.format == "vertical_9_16":
+                await bot.edit_message(chat_id, status_id, f"📐 Перекадрирую клип {i}/{len(valid_indices)} в 9:16...")
+                vertical_path = os.path.splitext(clip_path)[0] + "_v.mp4"
+                await asyncio.to_thread(engine.crop_to_vertical, clip_path, vertical_path)
+                if os.path.exists(clip_path):
+                    os.remove(clip_path)
+                clip_path = vertical_path
+
+
             if state.options.has_subtitles:
                 await bot.edit_message(chat_id, status_id, f"🎤 Накладываю субтитры на клип {i}/{len(valid_indices)}...")
                 webcam_box = getattr(state, "webcam_box", None)
@@ -168,7 +184,7 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             else:
                 final_path = clip_path
             clips.append(final_path)
-            
+
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"[CLIP ERROR] {type(e).__name__}: {e}\n{error_details}")
@@ -227,6 +243,20 @@ async def start_processing(chat_id: int, user_id: int):
             state.processing = False
         
         elif options.mode == "full":
+            # Проверка длительности — ДО скачивания полного видео по ссылке
+            duration = await asyncio.to_thread(engine.get_video_duration, video_path)
+            if duration > MAX_FULL_VIDEO_SEC:
+                limit_min = MAX_FULL_VIDEO_SEC // 60
+                await bot.edit_message(
+                    chat_id, status_id,
+                    f"❌ Видео слишком длинное ({int(duration // 60)} мин). "
+                    f"Для субтитров на всё видео лимит — {limit_min} минут.\n"
+                    f"Можно нарезать хайлайты — для них ограничения нет.",
+                )
+                state.processing = False   # разблокируем, чтобы можно было выбрать другой режим
+                return
+
+
             if state.source_url and video_path.endswith(".wav"):
                 await bot.edit_message(chat_id, status_id, "📥 Скачиваю полное видео из интернета (может занять минуты)...")
                 from link_downloader import download_by_link

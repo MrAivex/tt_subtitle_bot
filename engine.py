@@ -174,29 +174,150 @@ class VideoEngine:
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", out_path],
                        check=True, capture_output=True, text=True)
 
+
+    def crop_to_vertical(self, video_path: str, out_path: str):
+        """Центральная обрезка в 9:16 (без растягивания и чёрных полос)."""
+        w, h = self.get_video_resolution(video_path)
+        target = 9 / 16
+
+        if w / h > target:
+            # Широкое видео: режем по бокам
+            crop_w = int(h * target) // 2 * 2
+            crop_h = h // 2 * 2
+        else:
+            # Уже вертикальное или уже уже 9:16: режем сверху и снизу
+            crop_w = w // 2 * 2
+            crop_h = int(w / target) // 2 * 2
+
+        x = (w - crop_w) // 2
+        y = (h - crop_h) // 2
+
+        subprocess.run([self.ffmpeg, "-y", "-i", video_path,
+                        "-vf", f"crop={crop_w}:{crop_h}:{x}:{y}",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                        "-c:a", "copy", out_path],
+                       check=True, capture_output=True, text=True)
+        
+
+
+
+    # ---------- ASS-хелперы ----------
+    @staticmethod
+    def _calc_font_size(video_w: int, video_h: int) -> int:
+        """Размер шрифта от размера кадра: вертикальное — от ширины, горизонтальное — от высоты."""
+        fs = round(video_w * 0.06) if video_h > video_w else round(video_h * 0.05)
+        return max(fs, 18)
+
+    @staticmethod
+    def _ass_time(t: float) -> str:
+        cs = int(round(max(0.0, t) * 100))
+        h, cs = divmod(cs, 360000)
+        m, cs = divmod(cs, 6000)
+        s, cs = divmod(cs, 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    @staticmethod
+    def _ass_escape(text: str) -> str:
+        """Убираем символы, которые ASS считает управляющими."""
+        return text.replace("\\", "").replace("{", "(").replace("}", ")")
+
+    @staticmethod
+    def _ff_escape(path: str) -> str:
+        """Экранирование пути для фильтра ffmpeg (важно для Windows: C:\\...)."""
+        return path.replace("\\", "/").replace(":", r"\:")
+
+    def _build_ass(self, lines: List[Dict], video_w: int, video_h: int, video_duration: float,
+                   show_watermark: bool, font_family: str, bold: bool) -> str:
+        fs = self._calc_font_size(video_w, video_h)
+        stroke = max(2, round(fs / 18))              # обводка текста
+        pad = max(4, round(fs * 0.16))               # «поля» плашки вокруг слова
+        margin_v = max(40, round(video_h * 0.07))    # отступ снизу
+        wm_fs = max(14, round(fs * 0.78))
+        b = -1 if bold else 0
+
+        out = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            f"PlayResX: {video_w}",
+            f"PlayResY: {video_h}",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+            "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
+            "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            # Подложка: заливка текста прозрачна, «обводка» = фиолетовая плашка (BorderStyle=3)
+            f"Style: Box,{font_family},{fs},&HFFFFFFFF,&HFFFFFFFF,&H00DD4E9D,&H00000000,"
+            f"{b},0,0,0,100,100,0,0,3,{pad},0,2,10,10,{margin_v},1",
+            # Текст: белый с чёрной обводкой
+            f"Style: Text,{font_family},{fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            f"{b},0,0,0,100,100,0,0,1,{stroke},0,2,10,10,{margin_v},1",
+            # Водяной знак: слева внизу, ~60% непрозрачности
+            f"Style: Mark,{font_family},{wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,"
+            f"{b},0,0,0,100,100,0,0,1,{stroke},0,1,20,20,20,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        ]
+
+        for line in lines:
+            ws = line["words"]
+            words = [self._ass_escape(w["word"]) for w in ws]
+            n = len(ws)
+
+            # Текст строки — один раз на всё время строки
+            out.append(
+                f"Dialogue: 1,{self._ass_time(line['start'])},{self._ass_time(line['end'])},"
+                f"Text,,0,0,0,,{' '.join(words)}"
+            )
+
+            # Плашка — по одному событию на слово
+            for i, w in enumerate(ws):
+                nxt = ws[i + 1]["start"] if i + 1 < n else None
+                hl_end = w["end"] if nxt is None else min(nxt, max(w["end"] + 0.3, w["start"] + 0.05))
+                if hl_end - w["start"] < 0.01:
+                    continue
+                parts = [f"{{\\3a&H{'00' if j == i else 'FF'}&}}{wd}" for j, wd in enumerate(words)]
+                box_text = "{\\3a&HFF&} ".join(parts)
+                out.append(
+                    f"Dialogue: 0,{self._ass_time(w['start'])},{self._ass_time(hl_end)},"
+                    f"Box,,0,0,0,,{box_text}"
+                )
+
+        if show_watermark:
+            out.append(
+                f"Dialogue: 2,{self._ass_time(0)},{self._ass_time(video_duration + 1)},"
+                f"Mark,,0,0,0,,@tt_subtitle_bot"
+            )
+
+        return "\n".join(out) + "\n"
+
+
+
+
     # ==========================================================
     # ЭТАП 2: ПОЛНАЯ ОБРАБОТКА С СУБТИТРАМИ
     # ==========================================================
-    def process_video(self, input_path: str, user_id: str, is_premium: bool = False, 
-                  webcam_box: Optional[Dict] = None) -> Dict:
+    def process_video(self, input_path: str, user_id: str, is_premium: bool = False,
+                      webcam_box: Optional[Dict] = None) -> Dict:
         v_path = Path(input_path).resolve()
         video_dir = v_path.parent
         base_name = v_path.stem
 
         audio_file = video_dir / f"{base_name}.wav"
         srt_file = video_dir / f"{base_name}.srt"
+        ass_file = video_dir / f"{base_name}.ass"
         output_file = video_dir / f"{base_name}_subtitled.mp4"
-        temp_img_dir = video_dir / "temp_sub_img"
-        temp_img_dir.mkdir(exist_ok=True)
 
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_file)],
                            check=True, capture_output=True, text=True)
             segments, _ = self.model.transcribe(
                 str(audio_file), language="ru", word_timestamps=True,
-                beam_size=1,                       # 1 луч вместо 5 — намного быстрее
-                vad_filter=True,                   # пропускает тишину
-                condition_on_previous_text=False,  # меньше галлюцинаций
+                beam_size=1,
+                vad_filter=True,
+                condition_on_previous_text=False,
             )
             seg_list = list(segments)
 
@@ -207,108 +328,63 @@ class VideoEngine:
                 srt_text += f"{i}\n{start} --> {end}\n{seg.text.strip()}\n\n"
             srt_file.write_text(srt_text, encoding="utf-8")
 
-            font_path = self._get_font_path()
-            pillow_font = ImageFont.truetype(font_path, 36)
-            white, black_stroke, purple_bg = (255, 255, 255, 255), (0, 0, 0, 255), (157, 78, 221, 240)
-            radius, padding, line_height = 12, 6, 36 + 12
-
-            all_words = [{"word": w.word.strip(), "start": w.start, "end": w.end} for seg in seg_list if seg.words for w in seg.words]
+            all_words = [{"word": w.word.strip(), "start": w.start, "end": w.end}
+                         for seg in seg_list if seg.words for w in seg.words]
             if not all_words:
-                subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)], check=True, capture_output=True, text=True)
+                subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)],
+                               check=True, capture_output=True, text=True)
                 return {"video_path": str(output_file), "srt_path": str(srt_file)}
 
             video_w, video_h = self.get_video_resolution(str(v_path))
             video_duration = self.get_video_duration(str(v_path))
-            max_line_width = video_w - 40
-            lines, cur_line, cur_width = [], [], 0
-            space_w, _ = self._measure_text(pillow_font, " ")
 
+            # Шрифт и его размер от размера кадра
+            font_path = self._get_font_path()
+            fs = self._calc_font_size(video_w, video_h)
+            measure_font = ImageFont.truetype(font_path, fs)
+            font_family, font_style = measure_font.getname()
+            bold = "bold" in (font_style or "").lower()
+
+            # Разбивка на строки по реальной ширине (мерим уже в нижнем регистре)
+            max_line_width = video_w * 0.88
+            space_w = measure_font.getlength(" ")
+            lines, cur, cur_w = [], [], 0.0
             for w in all_words:
-                w_w, _ = self._measure_text(pillow_font, w["word"])
-                gap = space_w if cur_line else 0
-                if cur_line and cur_width + gap + w_w > max_line_width:
-                    lines.append({"text": " ".join(x["word"] for x in cur_line), "start": cur_line[0]["start"], "end": cur_line[-1]["end"], "words": cur_line})
-                    cur_line, cur_width, gap = [], 0, 0
-                cur_line.append(w)
-                cur_width += w_w + gap
-            if cur_line:
-                lines.append({"text": " ".join(x["word"] for x in cur_line), "start": cur_line[0]["start"], "end": cur_line[-1]["end"], "words": cur_line})
+                word = w["word"].lower()
+                if not word:
+                    continue
+                ww = measure_font.getlength(word)
+                gap = space_w if cur else 0.0
+                if cur and cur_w + gap + ww > max_line_width:
+                    lines.append({"start": cur[0]["start"], "end": cur[-1]["end"], "words": cur})
+                    cur, cur_w, gap = [], 0.0, 0.0
+                cur.append({"word": word, "start": w["start"], "end": w["end"]})
+                cur_w += gap + ww
+            if cur:
+                lines.append({"start": cur[0]["start"], "end": cur[-1]["end"], "words": cur})
 
-            overlays = []
-            for line_idx, line in enumerate(lines):
-                words_in_line = line["words"]
-                lower_words = [w["word"].strip().lower() for w in words_in_line]
-                full_text = " ".join(lower_words)
-                full_w, _ = self._measure_text(pillow_font, full_text)
-                x_start = (video_w - full_w) // 2
-                total_height = line_height
-                y_line = video_h - total_height - 80
+            ass_text = self._build_ass(lines, video_w, video_h, video_duration,
+                                       show_watermark=not is_premium,
+                                       font_family=font_family, bold=bold)
+            ass_file.write_text(ass_text, encoding="utf-8")
 
-                current_x = x_start
-                for i, w in enumerate(words_in_line):
-                    word_clean = w["word"].strip().lower()
-                    word_w, _ = self._measure_text(pillow_font, word_clean)
-                    rect_w = word_w + padding * 2
-                    rect_img = self._create_rounded_rect(rect_w, line_height, radius, purple_bg)
-                    
-                    rect_png_path = temp_img_dir / f"rect_{line_idx:04d}_{w['start']:.2f}.png"
-                    rect_img.save(str(rect_png_path))
-                    
-                    overlays.append({"start": w["start"], "end": w["end"], "x": current_x, "y": y_line, "png": str(rect_png_path)})
-                    current_x += word_w
-                    if i < len(words_in_line) - 1:
-                        space_w, _ = self._measure_text(pillow_font, " ")
-                        current_x += space_w
+            # ass лежит рядом с видео, ffmpeg запускаем из этой папки — путь в фильтре короткий
+            fonts_dir = str(Path(font_path).parent)
+            vf = (f"subtitles=filename='{self._ff_escape(ass_file.name)}'"
+                  f":fontsdir='{self._ff_escape(fonts_dir)}'")
 
-                text_img = self._create_text_image(full_text, pillow_font, white, None, radius, padding, min_height=line_height, stroke_width=2, stroke_fill=black_stroke)
-                text_png_path = temp_img_dir / f"line_{line_idx:04d}.png"
-                text_img.save(str(text_png_path))
-                overlays.append({"start": line["start"], "end": line["end"], "x": x_start, "y": y_line, "png": str(text_png_path)})
-
-            if not is_premium:
-                watermark_font = ImageFont.truetype(font_path, 28)
-                watermark_img = self._create_text_image("@tt_subtitle_bot", watermark_font, white, None, 0, 6, None, 2, black_stroke)
-                alpha = watermark_img.split()[3].point(lambda p: int(p * 0.6))
-                watermark_img.putalpha(alpha)
-                watermark_png_path = temp_img_dir / "watermark.png"
-                watermark_img.save(str(watermark_png_path))
-                overlays.append({"start": 0.0, "end": video_duration, "x": 20, "y": video_h - watermark_img.height - 20, "png": str(watermark_png_path)})
-
-            inputs = [str(v_path)]
-            filter_parts = []
-            current_label = "0:v"
-            next_label_idx = 1
-
-            for idx, ov in enumerate(overlays):
-                png_abs = str(Path(ov["png"]).resolve()).replace("\\", "/")
-                inputs.append(png_abs)
-                input_label = f"{next_label_idx}:v"
-                next_label_idx += 1
-                output_label = "[final]" if idx == len(overlays) - 1 else f"[tmp{idx}]"
-                filter_parts.append(f"[{current_label}][{input_label}]overlay={ov['x']}:{ov['y']}:enable='between(t,{ov['start']},{ov['end']})'{output_label}")
-                current_label = output_label.strip("[]")
-
-            if filter_parts:
-                cmd = [self.ffmpeg, "-y"] + [item for p in inputs for item in ["-i", p]] + [
-                    "-filter_complex", ";".join(filter_parts),
-                    "-map", "[final]", "-map", "0:a",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",   # ← вместо дефолтного medium
-                    "-c:a", "copy",
-                    str(output_file)
-                ]
-            else:
-                cmd = [self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)]
-
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            cmd = [self.ffmpeg, "-y", "-i", str(v_path),
+                   "-vf", vf,
+                   "-map", "0:v", "-map", "0:a?",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:a", "copy",
+                   str(output_file)]
+            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(video_dir))
             return {"video_path": str(output_file), "srt_path": str(srt_file)}
-        
+
         finally:
-            for f in temp_img_dir.glob("*.png"):
-                f.unlink(missing_ok=True)
-            try:
-                temp_img_dir.rmdir()
-            except (FileNotFoundError, OSError):
-                pass
+            if ass_file.exists():
+                ass_file.unlink()
             if audio_file.exists():
                 audio_file.unlink()
 

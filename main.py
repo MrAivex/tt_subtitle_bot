@@ -1,7 +1,7 @@
 """Точка входа в приложение. Только запуск сервера и планировщика."""
 
 import asyncio
-import subprocess
+import sys
 from aiohttp import web
 import logging
 from apscheduler.triggers.cron import CronTrigger
@@ -44,6 +44,29 @@ for logger_name in SPAM_LOGGERS:
 # ============================================================
 
 
+async def update_ytdlp():
+    """Обновляет yt-dlp в фоне, не блокируя запуск бота."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "pip", "install", "-q", "-U", "yt-dlp",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            print("⚠️ Обновление yt-dlp: таймаут 120 сек")
+            return
+
+        if proc.returncode == 0:
+            print("✅ yt-dlp обновлён")
+        else:
+            print(f"⚠️ Не удалось обновить yt-dlp: {stderr.decode(errors='ignore')[:200]}")
+    except Exception as e:
+        print(f"⚠️ Не удалось обновить yt-dlp: {e}")
+
 
 async def register_webhook():
     url = "https://platform-api.max.ru/subscriptions"
@@ -62,12 +85,8 @@ async def register_webhook():
 
 
 async def main():
-    try:
-        subprocess.run(["pip", "install", "-q", "-U", "yt-dlp"], timeout=120)
-        print("✅ yt-dlp обновлён")
-    except Exception as e:
-        print(f"⚠️ Не удалось обновить yt-dlp: {e}")
-
+    ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
+    
         
     await init_db_max()
     await register_webhook()

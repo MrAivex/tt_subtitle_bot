@@ -15,13 +15,14 @@ class ProcessingOptions:
 @dataclass
 class SessionState:
     chat_id: int
-    stage: str  # "awaiting_options", "awaiting_moment_selection"
+    stage: str
     video_path: str = ""
     video_token: str = ""
     moments: List[Dict] = field(default_factory=list)
     options: ProcessingOptions = field(default_factory=ProcessingOptions)
-    message_id: str = ""  # ID сообщения с клавиатурой
-    processing: bool = False  # ← НОВОЕ: защита от повторных запусков
+    message_id: str = ""
+    processing: bool = False
+    webcam_box: Optional[Dict] = None  # ← ДЛЯ БУДУЩЕГО: {"x", "y", "w", "h", "confidence"}
 
 
 class SessionManager:

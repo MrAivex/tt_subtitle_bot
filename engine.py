@@ -192,7 +192,12 @@ class VideoEngine:
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_file)],
                            check=True, capture_output=True, text=True)
-            segments, _ = self.model.transcribe(str(audio_file), language="ru", word_timestamps=True)
+            segments, _ = self.model.transcribe(
+                str(audio_file), language="ru", word_timestamps=True,
+                beam_size=1,                       # 1 луч вместо 5 — намного быстрее
+                vad_filter=True,                   # пропускает тишину
+                condition_on_previous_text=False,  # меньше галлюцинаций
+            )
             seg_list = list(segments)
 
             srt_text = ""
@@ -285,7 +290,11 @@ class VideoEngine:
 
             if filter_parts:
                 cmd = [self.ffmpeg, "-y"] + [item for p in inputs for item in ["-i", p]] + [
-                    "-filter_complex", ";".join(filter_parts), "-map", "[final]", "-map", "0:a", "-c:a", "copy", str(output_file)
+                    "-filter_complex", ";".join(filter_parts),
+                    "-map", "[final]", "-map", "0:a",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",   # ← вместо дефолтного medium
+                    "-c:a", "copy",
+                    str(output_file)
                 ]
             else:
                 cmd = [self.ffmpeg, "-y", "-i", str(v_path), "-c", "copy", str(output_file)]

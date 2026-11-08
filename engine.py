@@ -311,3 +311,12 @@ class VideoEngine:
                 pass
             if audio_file.exists():
                 audio_file.unlink()
+
+
+    def scan_audio_wav(self, wav_path: str, max_moments: int = 5) -> Dict:
+        """Сканирует готовый WAV (16 kHz mono): длительность + моменты."""
+        with wave.open(wav_path, "rb") as wf:
+            duration = wf.getnframes() / float(wf.getframerate())
+        moments = self._find_energy_peaks(wav_path)
+        clips = self._select_moments(moments, duration, count=max_moments)
+        return {"duration": duration, "moments": clips}

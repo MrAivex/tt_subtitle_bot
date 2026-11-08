@@ -23,6 +23,7 @@ class SessionState:
     message_id: str = ""
     processing: bool = False
     webcam_box: Optional[Dict] = None  # ← ДЛЯ БУДУЩЕГО: {"x", "y", "w", "h", "confidence"}
+    source_url: str = ""  # ссылка, если видео из интернета
 
 
 class SessionManager:

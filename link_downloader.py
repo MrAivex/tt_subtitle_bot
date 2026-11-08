@@ -2,6 +2,7 @@
 import re
 import logging
 import asyncio
+import os
 import hashlib
 from urllib.parse import urlparse, quote
 
@@ -128,3 +129,55 @@ async def download_by_link(url: str, output_path: str) -> str:
         return await task
     finally:
         _INFLIGHT.pop(key, None)
+
+
+
+def _ytdlp_audio_sync(url: str, stem: str) -> str:
+    import yt_dlp
+    opts = {
+        "outtmpl": stem,
+        "format": "worstaudio/bestaudio[abr<=96]/bestaudio",  # звук минимального веса
+        "noplaylist": True, "quiet": True, "no_warnings": True,
+        "socket_timeout": 30, "retries": 3,
+    }
+    if DOWNLOAD_PROXY and _needs_proxy(url):
+        opts["proxy"] = DOWNLOAD_PROXY
+        logger.info(f"[LINK] Аудио через прокси: {url}")
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)
+
+
+async def download_audio_only(url: str, out_wav: str) -> str:
+    """Быстро качает только звук и конвертит в WAV 16 kHz mono."""
+    import subprocess
+    raw = await asyncio.to_thread(_ytdlp_audio_sync, url, out_wav[:-4] + "_raw")
+    subprocess.run(["ffmpeg", "-y", "-i", raw, "-ar", "16000", "-ac", "1", out_wav],
+                   check=True, capture_output=True, text=True)
+    if os.path.exists(raw):
+        os.remove(raw)
+    return out_wav
+
+
+def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
+    import yt_dlp
+    opts = {
+        "outtmpl": stem,
+        "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
+        "merge_output_format": "mp4",
+        "noplaylist": True, "quiet": True, "no_warnings": True,
+        "socket_timeout": 30, "retries": 3,
+        "download_sections": [{"start_time": start, "end_time": end}],
+        "force_keyframes_at_cuts": True,
+    }
+    if DOWNLOAD_PROXY and _needs_proxy(url):
+        opts["proxy"] = DOWNLOAD_PROXY
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)
+
+
+async def download_section(url: str, start: float, end: float, out_path: str) -> str:
+    """Качает из интернета ТОЛЬКО фрагмент видео (для ссылок)."""
+    stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
+    return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem)

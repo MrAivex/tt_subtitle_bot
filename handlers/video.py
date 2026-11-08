@@ -144,24 +144,31 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
 
     clips = []
     try:
-        for idx in valid_indices:
+        for i, idx in enumerate(valid_indices, 1):
             moment = state.moments[idx]
-            clip_path = my_video.replace(".mp4", f"_clip_{idx}.mp4")
-            await asyncio.to_thread(engine.cut_clip, my_video, moment["start"], moment["end"], clip_path)
-            webcam_box = state.webcam_box if hasattr(state, 'webcam_box') else None
-            if state.options.has_subtitles:
-                result = await asyncio.to_thread(
-                    engine.process_video,
-                    clip_path,
-                    str(user_id),
-                    is_premium,
-                    webcam_box
-                )
+            if state.source_url:
+                # Ссылка: качаем ТОЛЬКО выбранный фрагмент
+                await bot.edit_message(chat_id, status_id, f"📥 Скачиваю фрагмент {i}/{len(valid_indices)} из интернета...")
+                from link_downloader import download_section
+                clip_path = f"downloads/clip_{user_id}_{idx}_{uuid.uuid4().hex[:6]}.mp4"
+                clip_path = await download_section(state.source_url, moment["start"], moment["end"], clip_path)
             else:
-                result = {"video_path": clip_path, "srt_path": None}
-            clips.append(result["video_path"])
-            if result["video_path"] != clip_path and os.path.exists(clip_path):
-                os.remove(clip_path)
+                # Файл: режем локально
+                await bot.edit_message(chat_id, status_id, f"✂️ Нарезаю клип {i}/{len(valid_indices)}...")
+                clip_path = my_video.replace(".mp4", f"_clip_{idx}.mp4")
+                await asyncio.to_thread(engine.cut_clip, my_video, moment["start"], moment["end"], clip_path)
+
+            if state.options.has_subtitles:
+                await bot.edit_message(chat_id, status_id, f"🎤 Накладываю субтитры на клип {i}/{len(valid_indices)}...")
+                webcam_box = getattr(state, "webcam_box", None)
+                result = await asyncio.to_thread(engine.process_video, clip_path, str(user_id), is_premium, webcam_box)
+                final_path = result["video_path"]
+                if final_path != clip_path and os.path.exists(clip_path):
+                    os.remove(clip_path)
+            else:
+                final_path = clip_path
+            clips.append(final_path)
+            
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"[CLIP ERROR] {type(e).__name__}: {e}\n{error_details}")
@@ -199,31 +206,37 @@ async def start_processing(chat_id: int, user_id: int):
     
     try:
         if options.mode == "highlights":
-            # Режим хайлайтов: сканируем и показываем моменты
-            await bot.edit_message(chat_id, status_id, "🔍 Сканирую видео на крутые моменты (2-4 минуты)...")
-            
-            result = await asyncio.to_thread(engine.scan_highlights, video_path, MAX_HIGHLIGHTS)
-            moments = result.get("moments", [])
-            
+            moments = state.moments                      # ← для ссылок уже готовы
+            if not moments:                              # ← для файлов — сканируем
+                await bot.edit_message(chat_id, status_id, "🔍 Сканирую видео на крутые моменты (2-4 минуты)...")
+                result = await asyncio.to_thread(engine.scan_highlights, video_path, MAX_HIGHLIGHTS)
+                moments = result.get("moments", [])
             if not moments:
                 await bot.edit_message(chat_id, status_id, "😕 Не нашёл ярких моментов в этом видео.")
                 session_manager.clear_state_if_same_video(user_id, video_path)
                 return
-            
             session_manager.set_awaiting_moment_selection(user_id, moments)
-            
             lines = ["🎬 *Нашёл крутые моменты!*\n"]
             for i, m in enumerate(moments, 1):
                 s, e = m["start"], m["end"]
                 lines.append(f"*{i}.* {format_moment_time(s)} – {format_moment_time(e)} ({int(e - s)} сек, громкость x{m['energy']})")
-            lines.append("\nКакие моменты нарезать с субтитрами?")
+            lines.append("\nКакие моменты нарезать?")
             lines.append("Напиши номера через запятую (например: 1, 3)")
             lines.append("/cancel — отмена.")
-            
             await bot.edit_message(chat_id, status_id, "\n".join(lines))
-            state.processing = False  # ← ждём выбор пользователя
+            state.processing = False
         
         elif options.mode == "full":
+            if state.source_url and video_path.endswith(".wav"):
+                await bot.edit_message(chat_id, status_id, "📥 Скачиваю полное видео из интернета (может занять минуты)...")
+                from link_downloader import download_by_link
+                mp4_path = video_path[:-4] + ".mp4"
+                full_path = await download_by_link(state.source_url, mp4_path)
+                if os.path.exists(video_path):
+                    os.remove(video_path)      # wav больше не нужен
+                state.video_path = full_path
+                video_path = full_path
+
             # Режим полного субтитрирования
             await bot.edit_message(chat_id, status_id, "🎬 Обрабатываю видео (это займёт время)...")
             
@@ -266,46 +279,49 @@ async def start_processing(chat_id: int, user_id: int):
 
 
 async def handle_link_download(chat_id: int, user_id: int, url: str):
-    """Скачивает видео по ссылке и показывает меню обработки."""
+    """Ссылка: быстро качаем аудио, размечаем моменты, показываем меню."""
     is_admin = user_id in ADMIN_IDS
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
         if not is_admin and not can_process_video(user):
-            await bot.send_message(
-                chat_id,
-                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
-                "Возвращайся завтра или оформи подписку через /pay.",
-            )
+            await bot.send_message(chat_id, "😔 Закончились бесплатные видео на сегодня (3/день).\nВозвращайся завтра или оформи подписку через /pay.")
             return
 
-    from link_downloader import detect_platform, download_by_link
+    from link_downloader import detect_platform, download_audio_only
     platform = detect_platform(url)
-
-    status_id = await bot.send_message(
-        chat_id, f"🔗 Распознал: {platform}. Скачиваю (может занять несколько минут)..."
-    )
+    status_id = await bot.send_message(chat_id, f"🔗 Распознал: {platform}. Качаю аудиодорожку (быстро)...")
 
     os.makedirs("downloads", exist_ok=True)
-    input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
+    wav_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.wav"
 
     try:
-        final_path = await download_by_link(url, input_path)
+        await download_audio_only(url, wav_path)
     except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"[LINK ERROR] {type(e).__name__}: {e}\n{error_details}")
-        await bot.edit_message(
-            chat_id, status_id,
-            f"❌ Не удалось скачать: {type(e).__name__}: {str(e)[:150]}",
-        )
+        logger.error(f"[LINK AUDIO ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        await bot.edit_message(chat_id, status_id, f"❌ Не удалось скачать аудио: {type(e).__name__}: {str(e)[:150]}")
         return
 
+    await bot.edit_message(chat_id, status_id, "🔍 Сканирую дорожку на крутые моменты...")
+    try:
+        result = await asyncio.to_thread(engine.scan_audio_wav, wav_path, MAX_HIGHLIGHTS)
+    except Exception as e:
+        logger.error(f"[SCAN AUDIO ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:150]}")
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+        return
+
+    moments = result.get("moments", [])
+
     session_manager.set_awaiting_video(user_id, chat_id)
-    session_manager.set_video_path(user_id, final_path)
-    session_manager.get_state(user_id).message_id = status_id
+    state = session_manager.get_state(user_id)
+    state.source_url = url
+    state.video_path = wav_path   # wav живёт в state для очистки
+    state.moments = moments       # моменты УЖЕ готовы
+    state.message_id = status_id
 
     from keyboards import initial_options_kb
-    await bot.edit_message(
-        chat_id, status_id,
-        "🎬 Видео скачано! Что сделать?",
-        reply_markup=initial_options_kb(),
-    )
+    text = (f"🎬 Готово! Нашёл {len(moments)} крутых моментов. Что дальше?"
+            if moments else
+            "🎬 Дорожка скачана, но ярких моментов не нашёл. Могу наложить субтитры на полное видео.")
+    await bot.edit_message(chat_id, status_id, text, reply_markup=initial_options_kb())

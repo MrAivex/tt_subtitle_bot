@@ -19,6 +19,9 @@ SCAN_SLOTS = asyncio.Semaphore(2)    # скачивание звука и numpy,
 RENDER_SLOTS = asyncio.Semaphore(1)  # whisper и ffmpeg
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_PATH = os.path.join(BASE_DIR, "miniapp", "index.html")
+
 
 class ApiError(Exception):
     def __init__(self, msg, code=400):
@@ -334,11 +337,11 @@ async def api_stats(request):
 
 
 async def _index(request):
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "miniapp", "index.html")
-    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
+    return web.FileResponse(INDEX_PATH, headers={"Cache-Control": "no-cache"})
 
 
 def register_miniapp(app: web.Application):
+    print(f"[MINIAPP] index.html: {INDEX_PATH} exists={os.path.exists(INDEX_PATH)}", flush=True)    
     api = web.Application(middlewares=[_mw])
     api.add_routes([
         web.get("/me", api_me), web.post("/scan", api_scan), web.post("/upload", api_upload),

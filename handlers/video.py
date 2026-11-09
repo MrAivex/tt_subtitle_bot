@@ -158,6 +158,11 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                 clip_path = f"downloads/clip_{user_id}_{idx}_{uuid.uuid4().hex[:6]}.mp4"
                 with timed(f"клип {i}: скачивание фрагмента"):
                     clip_path = await download_section(state.source_url, moment["start"], moment["end"], clip_path)
+                clip_len = await asyncio.to_thread(engine.get_video_duration, clip_path)
+                expected = moment["end"] - moment["start"]
+                if clip_len > expected + 30:
+                    raise RuntimeError(
+                        f"фрагмент скачался целиком ({clip_len:.0f} сек вместо ~{expected:.0f})")
             else:
                 # Файл: режем локально
                 await bot.edit_message(chat_id, status_id, f"✂️ Нарезаю клип {i}/{len(valid_indices)}...")

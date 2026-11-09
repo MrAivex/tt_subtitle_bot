@@ -209,20 +209,22 @@ async def download_audio_only(url: str, out_wav: str) -> str:
 
 def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
     import yt_dlp
+    from yt_dlp.utils import download_range_func
     opts = {
         "outtmpl": stem,
         "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "download_sections": [{"start_time": start, "end_time": end}],
-        # force_keyframes_at_cuts убран: всё равно перекодируем ниже одним проходом
+        # ВАЖНО: в Python API ключ называется download_ranges, а не download_sections
+        "download_ranges": download_range_func([], [(start, end)]),
+        # force_keyframes_at_cuts не ставим: без него ffmpeg режет с -c copy (без перекодирования).
+        # Начало клипа может сдвинуться на пару секунд к ближайшему ключевому кадру,
+        # у нас уже есть pad_before=3.
         "concurrent_fragment_downloads": 8,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
     }
-
-
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
     with yt_dlp.YoutubeDL(opts) as ydl:

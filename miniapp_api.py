@@ -15,7 +15,8 @@ from link_downloader import detect_platform, download_audio_only, download_by_li
 from payments import create_payment
 from subscriptions import SUBSCRIPTIONS
 
-HEAVY = asyncio.Semaphore(2)          # одновременно не больше 2 тяжёлых задач (whisper/ffmpeg)
+SCAN_SLOTS = asyncio.Semaphore(2)    # скачивание звука и numpy, нагрузка лёгкая
+RENDER_SLOTS = asyncio.Semaphore(1)  # whisper и ffmpeg
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
 
@@ -109,9 +110,10 @@ async def _new_job(uid) -> Job:
     if uid not in ADMIN_IDS and not can_process_video(user):
         raise ApiError("Видео на сегодня закончились. Оформи подписку в профиле.", 403)
     now = time.time()
-    for k, j in list(JOBS.items()):                      # уборка старых задач
-        if j.user_id == uid and j.status == "rendering":
-            raise ApiError("Предыдущая нарезка ещё идёт — дождись окончания", 409)
+    for k, j in list(JOBS.items()):
+        if j.user_id == uid and (j.status == "rendering"
+                                 or (j.status == "scanning" and now - j.ts < 1800)):
+            raise ApiError("Предыдущая задача ещё выполняется — дождись окончания", 409)
         if j.user_id == uid or (now - j.ts > 6 * 3600 and j.status != "rendering"):
             _rm(j.path)
             JOBS.pop(k, None)
@@ -141,7 +143,7 @@ async def _charge(job: Job) -> bool:
 # ---------- сканирование ----------
 async def _scan(job: Job, url: str = ""):
     try:
-        async with HEAVY:
+        async with SCAN_SLOTS:
             if url:
                 job.progress = "Качаю звук"
                 job.path = f"downloads/max_{job.user_id}_{job.id}.wav"
@@ -164,7 +166,7 @@ async def _scan(job: Job, url: str = ""):
 async def _render(job: Job, mode: str, idxs: list, subs: bool, vertical: bool):
     outs, keep = [], False
     try:
-        async with HEAVY:
+        async with RENDER_SLOTS:
             job.status, job.done, job.error = "rendering", 0, ""
             if mode == "full":
                 job.total = 1
@@ -203,6 +205,9 @@ async def _render(job: Job, mode: str, idxs: list, subs: bool, vertical: bool):
                     else:
                         await asyncio.to_thread(engine.cut_clip, job.path, m["start"], m["end"], clip)
                     outs.append(clip)
+                    got = await asyncio.to_thread(engine.get_video_duration, clip)
+                    if got > (m["end"] - m["start"]) + 30:
+                        raise RuntimeError(f"фрагмент скачался целиком ({got:.0f} с)")
                     final = clip
                     if subs:
                         r = await asyncio.to_thread(engine.process_video, clip, str(job.user_id),
@@ -251,6 +256,7 @@ async def api_scan(request):
 
 
 async def api_upload(request):
+    if field_ is None: raise ApiError("Файл не получен")
     job = await _new_job(request["uid"])
     field_ = await (await request.multipart()).next()
     name = (getattr(field_, "filename", "") or "").lower()
@@ -293,6 +299,7 @@ async def api_render(request):
     elif mode != "full":
         raise ApiError("Неизвестный режим")
     job.status = "rendering"
+    job.progress = "В очереди"
     asyncio.create_task(_render(job, mode, idxs, bool(body.get("subtitles", True)),
                                 bool(body.get("vertical", False))))
     return web.json_response(job.public())

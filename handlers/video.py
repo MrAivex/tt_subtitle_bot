@@ -181,6 +181,9 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                     result = await asyncio.to_thread(
                         engine.process_video, clip_path, str(user_id), is_premium, webcam_box, vertical)
                 final_path = result["video_path"]
+                srt = result.get("srt_path")
+                if srt and os.path.exists(srt):
+                    os.remove(srt)
                 if final_path != clip_path and os.path.exists(clip_path):
                     os.remove(clip_path)
             elif vertical:

@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import platform
 from datetime import timedelta
@@ -247,6 +248,18 @@ class VideoEngine:
         return text.replace("\\", "").replace("{", "(").replace("}", ")")
 
     @staticmethod
+    def _is_garbage_segment(seg) -> bool:
+        """Галлюцинации Whisper на шуме: 'ООООО...', зацикленный текст."""
+        text = seg.text.strip()
+        if not text:
+            return True
+        if re.search(r"(.)\1{7,}", text):     # один символ 8+ раз подряд
+            return True
+        if seg.compression_ratio > 2.4:       # сильно «сжимаемый» текст = зацикливание
+            return True
+        return False
+
+    @staticmethod
     def _ff_escape(path: str) -> str:
         """Экранирование пути для фильтра ffmpeg (важно для Windows: C:\\...)."""
         return path.replace("\\", "/").replace(":", r"\:")
@@ -352,6 +365,12 @@ class VideoEngine:
                 seg_list = list(segments)   # генератор ленивый, считается именно здесь
             logging.getLogger("timing").info(
                 f"[WHISPER] сегментов={len(seg_list)}, "
+                f"текст: {' '.join(s.text.strip() for s in seg_list)[:200]!r}")
+
+            raw_count = len(seg_list)
+            seg_list = [s for s in seg_list if not self._is_garbage_segment(s)]
+            logging.getLogger("timing").info(
+                f"[WHISPER] сегментов={raw_count}→{len(seg_list)}, "
                 f"текст: {' '.join(s.text.strip() for s in seg_list)[:200]!r}")
 
             srt_text = ""

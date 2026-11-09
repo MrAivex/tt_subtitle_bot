@@ -40,8 +40,12 @@ SPAM_LOGGERS = [
     "sqlalchemy", "sqlalchemy.engine",
 ]
 
-logging.getLogger("timing").setLevel(logging.INFO)
-logging.getLogger("link_downloader").setLevel(logging.INFO)
+_fh = logging.FileHandler("timing.log", encoding="utf-8")
+_fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+for _name in ("timing", "link_downloader"):
+    _lg = logging.getLogger(_name)
+    _lg.setLevel(logging.INFO)
+    _lg.addHandler(_fh)
 
 for logger_name in SPAM_LOGGERS:
     logging.getLogger(logger_name).setLevel(logging.WARNING)

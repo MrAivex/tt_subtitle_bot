@@ -8,6 +8,7 @@ import wave
 import numpy as np
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from utils import timed
 
 class VideoEngine:
     def __init__(self, device: str = "cpu"):
@@ -320,15 +321,19 @@ class VideoEngine:
         output_file = video_dir / f"{base_name}_subtitled.mp4"
 
         try:
-            subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_file)],
-                           check=True, capture_output=True, text=True)
-            segments, _ = self.model.transcribe(
-                str(audio_file), language="ru", word_timestamps=True,
-                beam_size=1,
-                vad_filter=True,
-                condition_on_previous_text=False,
-            )
-            seg_list = list(segments)
+            with timed("clip: ffmpeg → wav"):
+                subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_file)],
+                               check=True, capture_output=True, text=True)
+
+            with timed("whisper: загрузка модели"):
+                model = self.model
+
+            with timed("whisper: распознавание"):
+                segments, _ = model.transcribe(
+                    str(audio_file), language="ru", word_timestamps=True,
+                    beam_size=1, vad_filter=True, condition_on_previous_text=False,
+                )
+                seg_list = list(segments)   # транскрибация идёт именно здесь, генератор ленивый
 
             srt_text = ""
             for i, seg in enumerate(seg_list, 1):
@@ -396,7 +401,8 @@ class VideoEngine:
                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                    "-c:a", "copy",
                    str(output_file)]
-            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(video_dir))
+            with timed("clip: рендер ffmpeg"):
+                subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(video_dir))
             return {"video_path": str(output_file), "srt_path": str(srt_file)}
 
         finally:

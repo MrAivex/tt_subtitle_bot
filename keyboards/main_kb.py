@@ -1,18 +1,11 @@
 from subscriptions import SUBSCRIPTIONS
+from config import BOT_USERNAME
 
 
 def main_menu_kb():
-    return [{
-        "type": "inline_keyboard",
-        "payload": {
-            "buttons": [
-                [{"type": "callback", "text": "🎬 Найти хайлайты", "payload": "find_highlights"}],
-                [{"type": "callback", "text": "📦 Подписки", "payload": "show_subscriptions"}],
-                [{"type": "callback", "text": "✉️ Указать email", "payload": "ask_email"}],
-                [{"type": "callback", "text": "ℹ️ Помощь", "payload": "help"}],
-            ]
-        }
-    }]
+    return [{"type": "inline_keyboard", "payload": {"buttons": [
+        [{"type": "open_app", "text": "🎬 Открыть приложение", "web_app": BOT_USERNAME}],
+    ]}}]
 
 
 def subscriptions_kb():

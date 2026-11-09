@@ -13,6 +13,7 @@ from app import bot, scheduler
 from app import engine
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
+from miniapp_api import register_miniapp
 
 
 # ============================================================
@@ -117,6 +118,7 @@ async def main():
 
     # Веб-сервер
     app = web.Application()
+    register_miniapp(app)
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
     app.router.add_post("/yookassa-webhook", handle_yookassa_webhook)
     app.router.add_post("/yookassa-webhook-max", handle_yookassa_webhook)

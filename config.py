@@ -32,3 +32,5 @@ MOSCOW_TZ = timezone("Europe/Moscow")
 DOWNLOAD_PROXY = os.getenv("DOWNLOAD_PROXY", "")
 # Домены, которые обязательно идут через прокси
 PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")
+
+BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")

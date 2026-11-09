@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Хайлайты</title>
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef0f6;--card:#fff;--ink:#12142a;--mute:#6a6f8c;--line:#d9dcea;--acc:#4b3df2;--acc-ink:#fff;--sel:#ffb020;
+--f:'Onest',system-ui,sans-serif;--h:'Unbounded','Onest',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#10122a;--card:#1a1d3a;--ink:#eceefc;--mute:#9aa0c4;--line:#2c3057;--acc:#7a6dff}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--f)}
+body{padding:env(safe-area-inset-top,0) 16px calc(76px + env(safe-area-inset-bottom,0))}
+main{max-width:520px;margin:0 auto;padding-top:20px}
+h1{font:700 21px/1.2 var(--h);margin:0 0 8px}
+.sub{color:var(--mute);margin:0 0 18px}
+input[type=url],input[type=email]{width:100%;padding:14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;margin-bottom:10px}
+button,.file{display:block;width:100%;padding:14px;border:0;border-radius:12px;font:600 16px var(--f);cursor:pointer;text-align:center;margin-top:10px;color:var(--ink);background:var(--card);border:1.5px solid var(--line)}
+button.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
+.or{text-align:center;color:var(--mute);margin:16px 0 6px}
+.bar{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:16px 0}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .3s}
+.bar i.ind{width:35%!important;animation:sl 1.2s ease-in-out infinite alternate}
+@keyframes sl{to{margin-left:65%}}
+@media(prefers-reduced-motion:reduce){.bar i.ind{animation:none;margin-left:30%}}
+.track{position:relative;height:44px;background:var(--card);border:1.5px solid var(--line);border-radius:10px;margin:6px 0 16px;overflow:hidden}
+.seg{position:absolute;top:6px;bottom:6px;background:var(--mute);opacity:.55;border-radius:4px}
+.seg.on{background:var(--sel);opacity:1}
+.row{display:flex;gap:12px;align-items:center;padding:12px 14px;background:var(--card);border:1.5px solid var(--line);border-radius:12px;margin-bottom:8px}
+.row input{width:22px;height:22px;accent-color:var(--acc);flex:none}
+.row b{font-variant-numeric:tabular-nums}.row small{display:block;color:var(--mute)}
+.opts{display:flex;gap:8px;margin:14px 0 4px}
+.opts button{margin:0;padding:11px}
+.opts button.on{border-color:var(--acc);color:var(--acc)}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card p{margin:0 0 4px;color:var(--mute)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1.5px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom,0))}
+nav button{margin:0 4px;border:0;background:none;padding:10px}
+nav button.on{color:var(--acc)}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(88px + env(safe-area-inset-bottom,0));background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:12px;display:none}
+.err{color:#d6334a}
+</style>
+</head>
+<body>
+<main id="v"></main>
+<div id="toast" role="status"></div>
+<nav><button data-t="home" class="on">Видео</button><button data-t="profile">Профиль</button></nav>
+<script>
+const $=s=>document.querySelector(s),W=window.WebApp;
+try{W&&W.ready()}catch(e){}
+const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+const hdr=()=>({'X-Init-Data':(W&&W.initData)||''});
+async function api(p,m='GET',b){
+  const r=await fetch('/api'+p,{method:m,headers:{...hdr(),...(b?{'Content-Type':'application/json'}:{})},body:b?JSON.stringify(b):undefined});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||'Ошибка '+r.status);
+  return d;
+}
+let tt;function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(tt);tt=setTimeout(()=>e.style.display='none',3500)}
+const tab=t=>document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+
+async function home(){
+  tab('home');clearInterval(S.timer);
+  try{S.me=await api('/me')}catch(e){return fail(e.message)}
+  const m=S.me,left=m.is_admin||m.limit>1000?'без ограничений':Math.max(0,m.limit-m.used);
+  $('#v').innerHTML=`<h1>Нарезка хайлайтов</h1>
+  <p class="sub">Вставь ссылку на стрим или загрузи файл. Видео на сегодня: <b>${left}</b></p>
+  <input id="url" type="url" placeholder="Ссылка на YouTube, Twitch, TikTok, Диск" autocomplete="off">
+  <button class="pri" data-a="scan">Найти моменты</button>
+  <div class="or">или</div>
+  <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>`;
+}
+function busy(t,p){
+  $('#v').innerHTML=`<h1>${esc(t)}</h1><div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>`;
+}
+function fail(t){
+  clearInterval(S.timer);
+  $('#v').innerHTML=`<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="home">Попробовать снова</button>`;
+}
+function doneView(){
+  $('#v').innerHTML=`<h1>Готово</h1><p class="sub">Видео уже в чате с ботом.</p><button class="pri" data-a="home">Новое видео</button>`;
+}
+function momentsView(){
+  const j=S.job,ms=j.moments;
+  const track=ms.map((m,i)=>`<i class="seg ${S.sel.has(i)?'on':''}" data-s="${i}" style="left:${m.start/j.duration*100}%;width:${Math.max(1.5,(m.end-m.start)/j.duration*100)}%"></i>`).join('');
+  const rows=ms.map((m,i)=>`<label class="row"><input type="checkbox" data-i="${i}" ${S.sel.has(i)?'checked':''}>
+    <span><b>${fmt(m.start)}–${fmt(m.end)}</b><small>${Math.round(m.end-m.start)} с, громкость ×${m.energy}</small></span></label>`).join('');
+  $('#v').innerHTML=`<h1>${ms.length?'Найдено моментов: '+ms.length:'Ярких моментов нет'}</h1>
+  <p class="sub ${j.error?'err':''}">${esc(j.error||(ms.length?'Выбери до 3 клипов. Длина видео: '+fmt(j.duration):'Можно наложить субтитры на всё видео.'))}</p>
+  ${ms.length?`<div class="track">${track}</div>${rows}`:''}
+  <div class="opts"><button data-a="subs" class="${S.subs?'on':''}">Субтитры: ${S.subs?'да':'нет'}</button>
+  <button data-a="fmt" class="${S.vert?'on':''}">Формат: ${S.vert?'9:16':'исходный'}</button></div>
+  ${ms.length?`<button class="pri" id="cut" data-a="cut" ${S.sel.size?'':'disabled'}>Нарезать: ${S.sel.size}</button>`:''}
+  <button data-a="full">Субтитры на всё видео</button>`;
+}
+function paintSel(){
+  document.querySelectorAll('.seg').forEach(e=>e.classList.toggle('on',S.sel.has(+e.dataset.s)));
+  const c=$('#cut');if(c){c.textContent='Нарезать: '+S.sel.size;c.disabled=!S.sel.size}
+}
+function poll(){
+  clearInterval(S.timer);
+  S.timer=setInterval(async()=>{
+    try{
+      const j=S.job=await api('/jobs/'+S.job.id);
+      if(j.status==='scanning')busy(j.progress||'Сканирую');
+      else if(j.status==='rendering')busy(j.progress||'Обрабатываю',j.total?Math.round(j.done/j.total*100):null);
+      else if(j.status==='ready'){clearInterval(S.timer);momentsView()}
+      else if(j.status==='done'){clearInterval(S.timer);doneView()}
+      else if(j.status==='error')fail(j.error);
+    }catch(e){fail(e.message)}
+  },2000);
+}
+async function start(p,b){
+  try{S.job=await api(p,'POST',b);S.sel.clear();busy('Сканирую');poll()}catch(e){toast(e.message)}
+}
+function upload(f){
+  busy('Загружаю файл',0);
+  const x=new XMLHttpRequest();x.open('POST','/api/upload');
+  x.setRequestHeader('X-Init-Data',(W&&W.initData)||'');
+  x.upload.onprogress=e=>{if(e.lengthComputable)$('.bar i').style.width=Math.round(e.loaded/e.total*100)+'%'};
+  x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
+    if(x.status!==200)return fail(d.error||'Не удалось загрузить файл');
+    S.job=d;S.sel.clear();busy('Сканирую');poll()};
+  x.onerror=()=>fail('Нет связи с сервером');
+  const fd=new FormData();fd.append('file',f);x.send(fd);
+}
+async function render(mode){
+  try{
+    await api(`/jobs/${S.job.id}/render`,'POST',{mode,moments:[...S.sel],subtitles:S.subs,vertical:S.vert});
+    busy('Запускаю');poll();
+  }catch(e){toast(e.message)}
+}
+async function profile(){
+  tab('profile');clearInterval(S.timer);
+  let m;try{m=S.me=await api('/me')}catch(e){return fail(e.message)}
+  const free=m.sub==='default';
+  $('#v').innerHTML=`<h1>Профиль</h1>
+  <div class="card"><b>${free?'Бесплатный тариф':'Подписка активна'}</b>
+  <p>${m.limit>1000?'Без ограничений по видео':'Использовано сегодня: '+m.used+' из '+m.limit}</p>
+  ${m.expiry?`<p>Действует до ${esc(m.expiry)}</p>`:''}</div>
+  <div class="card"><b>Email для чека</b><br><br>
+  <input id="email" type="email" value="${esc(m.email)}" placeholder="name@example.com">
+  <button data-a="email">Сохранить email</button></div>
+  ${m.subs.map(s=>`<div class="card"><b>${esc(s.name)}, ${s.price} ₽</b><p>${esc(s.description)}</p>
+  <button class="pri" data-a="pay" data-id="${esc(s.id)}">Оформить</button></div>`).join('')}
+  <div id="adm"></div>`;
+  if(m.is_admin)try{const s=await api('/stats');
+    $('#adm').innerHTML=`<div class="card"><b>Статистика</b><p>Пользователей: ${s.total}</p><p>С подпиской: ${s.paid}</p><p>С email: ${s.with_email}</p></div>`}catch(e){}
+}
+document.addEventListener('click',async e=>{
+  const n=e.target.closest('nav button');if(n)return n.dataset.t==='home'?home():profile();
+  const b=e.target.closest('[data-a]');if(!b)return;
+  const a=b.dataset.a;
+  if(a==='home')home();
+  else if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
+  else if(a==='subs'){S.subs=!S.subs;momentsView()}
+  else if(a==='fmt'){S.vert=!S.vert;momentsView()}
+  else if(a==='cut')render('highlights');
+  else if(a==='full')render('full');
+  else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}
+  else if(a==='pay'){try{const d=await api('/pay','POST',{sub_id:b.dataset.id});
+    b.dataset.a='link';b.dataset.url=d.url;b.textContent='Перейти к оплате'}catch(x){toast(x.message)}}
+  else if(a==='link'){const u=b.dataset.url;(W&&W.openLink)?W.openLink(u):window.open(u,'_blank')}
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='file'&&e.target.files[0])return upload(e.target.files[0]);
+  const i=e.target.dataset&&e.target.dataset.i;if(i==null)return;
+  if(e.target.checked){
+    if(S.sel.size>=3){e.target.checked=false;return toast('Не больше 3 клипов за раз')}
+    S.sel.add(+i);
+  }else S.sel.delete(+i);
+  paintSel();
+});
+home();
+</script>
+</body>
+</html>

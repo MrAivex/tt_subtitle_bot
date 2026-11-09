@@ -12,6 +12,12 @@ from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from utils import timed
 
+
+# Типичные галлюцинации Whisper на шуме/тишине (подписи из обучающих данных)
+_HALLUCINATION_RE = re.compile(
+    r"субтитр|корректор|dimatorzok|продолжение следует", re.IGNORECASE)
+
+
 class VideoEngine:
     def __init__(self, device: str = "cpu"):
         self.device = device
@@ -249,13 +255,15 @@ class VideoEngine:
 
     @staticmethod
     def _is_garbage_segment(seg) -> bool:
-        """Галлюцинации Whisper на шуме: 'ООООО...', зацикленный текст."""
+        """Галлюцинации Whisper на шуме: 'ООООО...', зацикленный текст, фразы-подписи."""
         text = seg.text.strip()
         if not text:
             return True
-        if re.search(r"(.)\1{7,}", text):     # один символ 8+ раз подряд
+        if re.search(r"(.)\1{7,}", text):         # один символ 8+ раз подряд
             return True
-        if seg.compression_ratio > 2.4:       # сильно «сжимаемый» текст = зацикливание
+        if seg.compression_ratio > 2.4:           # сильно «сжимаемый» текст = зацикливание
+            return True
+        if _HALLUCINATION_RE.search(text):        # «Субтитры сделал ...» и подобное
             return True
         return False
 

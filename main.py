@@ -97,7 +97,7 @@ async def main():
 
         
     await init_db_max()
-    warmup_task = asyncio.create_task(asyncio.to_thread(lambda: engine.model))
+    warmup_task = asyncio.create_task(asyncio.to_thread(engine.warmup))
     await register_webhook()
 
     # Планировщик

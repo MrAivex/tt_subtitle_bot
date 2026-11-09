@@ -29,6 +29,20 @@ class VideoEngine:
             self._model = WhisperModel("small", device=self.device, compute_type=compute_type, cpu_threads=2)
         return self._model
 
+
+    def warmup(self):
+        """Прогоняет по одному короткому распознаванию, чтобы первый пользователь не ждал."""
+        with timed("whisper: прогрев"):
+            audio = (np.random.randn(16000 * 3) * 0.01).astype(np.float32)
+            # Сначала без VAD: гонит сам энкодер/декодер. Потом с VAD: подгружает его модель.
+            for use_vad in (False, True):
+                segs, _ = self.model.transcribe(
+                    audio, language="ru", beam_size=1,
+                    word_timestamps=True, vad_filter=use_vad,
+                )
+                list(segs)   # генератор ленивый, без этого ничего не посчитается
+                
+
     def _get_font_path(self) -> str:
         candidates = [
             Path(__file__).parent / "fonts" / "roboto-bold.ttf",

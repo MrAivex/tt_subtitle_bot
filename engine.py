@@ -5,6 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 import wave
+import logging
 import numpy as np
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
@@ -41,7 +42,7 @@ class VideoEngine:
                     word_timestamps=True, vad_filter=use_vad,
                 )
                 list(segs)   # генератор ленивый, без этого ничего не посчитается
-                
+
 
     def _get_font_path(self) -> str:
         candidates = [
@@ -346,8 +347,12 @@ class VideoEngine:
                 segments, _ = model.transcribe(
                     str(audio_file), language="ru", word_timestamps=True,
                     beam_size=1, vad_filter=True, condition_on_previous_text=False,
+                    temperature=0.0,   # без повторных попыток с нагревом
                 )
-                seg_list = list(segments)   # транскрибация идёт именно здесь, генератор ленивый
+                seg_list = list(segments)   # генератор ленивый, считается именно здесь
+            logging.getLogger("timing").info(
+                f"[WHISPER] сегментов={len(seg_list)}, "
+                f"текст: {' '.join(s.text.strip() for s in seg_list)[:200]!r}")
 
             srt_text = ""
             for i, seg in enumerate(seg_list, 1):

@@ -13,7 +13,7 @@ from app import bot, scheduler
 from app import engine
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
-from miniapp_api import register_miniapp
+from miniapp.miniapp_api import register_miniapp
 
 
 # ============================================================

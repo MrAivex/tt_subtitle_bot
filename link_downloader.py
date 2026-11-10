@@ -51,6 +51,22 @@ def _needs_proxy(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
+def _final_path(ydl, info, stem: str) -> str:
+    """Реальный путь скачанного файла (yt-dlp сам решает, какое будет расширение)."""
+    try:
+        fp = info["requested_downloads"][0]["filepath"]
+        if fp and os.path.exists(fp):
+            return fp
+    except (KeyError, IndexError, TypeError):
+        pass
+    for ext in (".mp4", ".mkv", ".webm", ".mov", ""):
+        if os.path.exists(stem + ext):
+            return stem + ext
+    guess = ydl.prepare_filename(info)
+    logger.warning(f"[LINK] файл не найден по stem={stem}, prepare_filename={guess}")
+    return guess
+
+
 def _progress_hook_factory(tag: str):
     """Логирует прогресс скачивания раз в 20 секунд."""
     last = {"t": 0.0}
@@ -72,7 +88,7 @@ def _ytdlp_download_sync(url: str, output_path: str) -> str:
     import yt_dlp
     stem = output_path[:-4] if output_path.endswith(".mp4") else output_path
     opts = {
-        "outtmpl": stem,
+        "outtmpl": stem + ".%(ext)s",
         "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -93,7 +109,7 @@ def _ytdlp_download_sync(url: str, output_path: str) -> str:
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+        return _final_path(ydl, info, stem)
 
 
 async def _download_yandex_disk(url: str, output_path: str) -> str:
@@ -211,7 +227,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
     import yt_dlp
     from yt_dlp.utils import download_range_func
     opts = {
-        "outtmpl": stem,
+        "outtmpl": stem + ".%(ext)s",
         "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
@@ -229,7 +245,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
         opts["proxy"] = DOWNLOAD_PROXY
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+        return _final_path(ydl, info, stem)
 
 
 async def download_section(url: str, start: float, end: float, out_path: str) -> str:

@@ -20,7 +20,7 @@ RENDER_SLOTS = asyncio.Semaphore(1)  # whisper и ffmpeg
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-INDEX_PATH = os.path.join(BASE_DIR, "miniapp", "index.html")
+INDEX_PATH = os.path.join(BASE_DIR, "index.html")
 
 
 class ApiError(Exception):

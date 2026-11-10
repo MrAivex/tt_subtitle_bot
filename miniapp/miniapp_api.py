@@ -83,6 +83,7 @@ class Job:
     total: int = 0
     error: str = ""
     ts: float = field(default_factory=time.time)
+    seen: bool = False            # клиент уже получил финальный статус (done/error)
 
     def public(self):
         return {k: getattr(self, k) for k in
@@ -259,9 +260,11 @@ async def api_scan(request):
 
 
 async def api_upload(request):
-    if field_ is None: raise ApiError("Файл не получен")
     job = await _new_job(request["uid"])
     field_ = await (await request.multipart()).next()
+    if field_ is None:
+        JOBS.pop(job.id, None)
+        raise ApiError("Файл не получен")
     name = (getattr(field_, "filename", "") or "").lower()
     if not name.endswith(VIDEO_EXT):
         JOBS.pop(job.id, None)
@@ -284,7 +287,22 @@ async def api_upload(request):
 
 
 async def api_job(request):
-    return web.json_response(_job_of(request).public())
+    job = _job_of(request)
+    if job.status in ("done", "error"):
+        job.seen = True
+    return web.json_response(job.public())
+
+
+async def api_active(request):
+    """Текущая задача пользователя — чтобы приложение могло подхватить её после выхода."""
+    mine = [j for j in JOBS.values() if j.user_id == request["uid"]]
+    job = max(mine, key=lambda j: j.ts, default=None)
+    if job and job.status in ("done", "error"):
+        if job.seen:
+            job = None            # финал уже показывали, второй раз не надо
+        else:
+            job.seen = True
+    return web.json_response({"job": job.public() if job else None})
 
 
 async def api_render(request):
@@ -344,7 +362,7 @@ def register_miniapp(app: web.Application):
     print(f"[MINIAPP] index.html: {INDEX_PATH} exists={os.path.exists(INDEX_PATH)}", flush=True)    
     api = web.Application(middlewares=[_mw])
     api.add_routes([
-        web.get("/me", api_me), web.post("/scan", api_scan), web.post("/upload", api_upload),
+        web.get("/me", api_me), web.get("/active", api_active), web.post("/scan", api_scan), web.post("/upload", api_upload),
         web.get("/jobs/{id}", api_job), web.post("/jobs/{id}/render", api_render),
         web.post("/email", api_email), web.post("/pay", api_pay), web.get("/stats", api_stats),
     ])

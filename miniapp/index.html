@@ -53,22 +53,24 @@ nav button.on{color:var(--acc)}
 <script>
 const $=s=>document.querySelector(s),W=window.WebApp;
 try{W&&W.ready()}catch(e){}
-const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null};
+const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null,tab:'home',up:null,seq:0};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
 const hdr=()=>({'X-Init-Data':(W&&W.initData)||''});
 async function api(p,m='GET',b){
   const r=await fetch('/api'+p,{method:m,headers:{...hdr(),...(b?{'Content-Type':'application/json'}:{})},body:b?JSON.stringify(b):undefined});
   const d=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(d.error||'Ошибка '+r.status);
+  if(!r.ok){const er=new Error(d.error||'Ошибка '+r.status);er.status=r.status;throw er}
   return d;
 }
 let tt;function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(tt);tt=setTimeout(()=>e.style.display='none',3500)}
-const tab=t=>document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+const tab=t=>{S.tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t))};
 
 async function home(){
-  tab('home');clearInterval(S.timer);
+  tab('home');
+  if(S.up||S.job)return paint();   // идёт загрузка или задача — показываем её, а не стартовый экран
   try{S.me=await api('/me')}catch(e){return fail(e.message)}
+  if(S.tab!=='home')return;
   const m=S.me,left=m.is_admin||m.limit>1000?'без ограничений':Math.max(0,m.limit-m.used);
   $('#v').innerHTML=`<h1>Нарезка хайлайтов</h1>
   <p class="sub">Вставь ссылку на стрим или загрузи файл. Видео на сегодня: <b>${left}</b></p>
@@ -81,11 +83,10 @@ function busy(t,p){
   $('#v').innerHTML=`<h1>${esc(t)}</h1><div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>`;
 }
 function fail(t){
-  clearInterval(S.timer);
-  $('#v').innerHTML=`<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="home">Попробовать снова</button>`;
+  $('#v').innerHTML=`<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
 }
 function doneView(){
-  $('#v').innerHTML=`<h1>Готово</h1><p class="sub">Видео уже в чате с ботом.</p><button class="pri" data-a="home">Новое видео</button>`;
+  $('#v').innerHTML=`<h1>Готово</h1><p class="sub">Видео уже в чате с ботом.</p><button class="pri" data-a="reset">Новое видео</button>`;
 }
 function momentsView(){
   const j=S.job,ms=j.moments;
@@ -104,42 +105,90 @@ function paintSel(){
   document.querySelectorAll('.seg').forEach(e=>e.classList.toggle('on',S.sel.has(+e.dataset.s)));
   const c=$('#cut');if(c){c.textContent='Нарезать: '+S.sel.size;c.disabled=!S.sel.size}
 }
-function poll(){
-  clearInterval(S.timer);
-  S.timer=setInterval(async()=>{
-    try{
-      const j=S.job=await api('/jobs/'+S.job.id);
-      if(j.status==='scanning')busy(j.progress||'Сканирую');
-      else if(j.status==='rendering')busy(j.progress||'Обрабатываю',j.total?Math.round(j.done/j.total*100):null);
-      else if(j.status==='ready'){clearInterval(S.timer);momentsView()}
-      else if(j.status==='done'){clearInterval(S.timer);doneView()}
-      else if(j.status==='error')fail(j.error);
-    }catch(e){fail(e.message)}
-  },2000);
+function badge(){
+  const run=S.up||(S.job&&(S.job.status==='scanning'||S.job.status==='rendering'));
+  document.querySelector('nav [data-t=home]').textContent=run?'Видео ⏳':'Видео';
+}
+// рисует текущее состояние на вкладке «Видео»; на других вкладках ничего не трогает
+function paint(){
+  badge();
+  if(S.tab!=='home')return;
+  const j=S.job;
+  if(S.up)return busy('Загружаю файл — не закрывай приложение',S.up.pct);
+  if(!j)return home();
+  if(j.status==='scanning')busy(j.progress||'Сканирую');
+  else if(j.status==='rendering')busy(j.progress||'Обрабатываю',j.total?Math.round(j.done/j.total*100):null);
+  else if(j.status==='ready')momentsView();
+  else if(j.status==='done')doneView();
+  else if(j.status==='error')fail(j.error);
+}
+function stopPoll(){clearInterval(S.timer);S.timer=null}
+function poll(){if(!S.timer)S.timer=setInterval(tick,2000)}
+async function tick(){
+  if(!S.job)return stopPoll();
+  const seq=S.seq;
+  try{
+    const j=await api('/jobs/'+S.job.id);
+    if(seq!==S.seq)return;            // за время запроса стартовала другая операция — ответ устарел
+    S.job=j;
+    if(j.status==='ready'||j.status==='done'||j.status==='error'){
+      stopPoll();
+      if(S.tab!=='home'){
+        if(j.status==='done')toast('Готово — видео в чате с ботом');
+        else if(j.status==='ready')toast('Моменты найдены — открой вкладку «Видео»');
+        else toast('Ошибка: '+(j.error||'неизвестная'));
+      }
+    }
+    paint();
+  }catch(e){
+    if(e.status===404||e.status===401){stopPoll();S.job=null;paint()}
+    // остальное (нет связи, приложение было в фоне) игнорируем и спрашиваем снова
+  }
+}
+// подхватить задачу, которая уже есть на сервере
+async function restore(){
+  try{
+    const d=await api('/active');
+    if(d.job){
+      S.seq++;S.job=d.job;S.sel.clear();
+      if(d.job.status==='scanning'||d.job.status==='rendering')poll();
+    }
+  }catch(e){}
+  paint();
 }
 async function start(p,b){
-  try{S.job=await api(p,'POST',b);S.sel.clear();busy('Сканирую');poll()}catch(e){toast(e.message)}
+  try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();paint();poll()}
+  catch(e){toast(e.message);if(e.status===409)restore()}
 }
 function upload(f){
-  busy('Загружаю файл',0);
+  S.up={pct:0};paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
   x.setRequestHeader('X-Init-Data',(W&&W.initData)||'');
-  x.upload.onprogress=e=>{if(e.lengthComputable)$('.bar i').style.width=Math.round(e.loaded/e.total*100)+'%'};
+  x.upload.onprogress=e=>{
+    if(!e.lengthComputable)return;
+    S.up.pct=Math.round(e.loaded/e.total*100);
+    const bar=S.tab==='home'&&$('.bar i');if(bar)bar.style.width=S.up.pct+'%';
+  };
   x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
-    if(x.status!==200)return fail(d.error||'Не удалось загрузить файл');
-    S.job=d;S.sel.clear();busy('Сканирую');poll()};
-  x.onerror=()=>fail('Нет связи с сервером');
+    S.up=null;
+    if(x.status!==200){
+      const msg=d.error||'Не удалось загрузить файл';
+      badge();return S.tab==='home'?fail(msg):toast(msg);
+    }
+    S.seq++;S.job=d;S.sel.clear();paint();poll()};
+  x.onerror=()=>{S.up=null;badge();S.tab==='home'?fail('Нет связи с сервером'):toast('Загрузка файла прервалась')};
   const fd=new FormData();fd.append('file',f);x.send(fd);
 }
 async function render(mode){
   try{
-    await api(`/jobs/${S.job.id}/render`,'POST',{mode,moments:[...S.sel],subtitles:S.subs,vertical:S.vert});
-    busy('Запускаю');poll();
+    const j=await api(`/jobs/${S.job.id}/render`,'POST',{mode,moments:[...S.sel],subtitles:S.subs,vertical:S.vert});
+    S.seq++;S.job=j;paint();poll();
   }catch(e){toast(e.message)}
 }
 async function profile(){
-  tab('profile');clearInterval(S.timer);
+  tab('profile');
   let m;try{m=S.me=await api('/me')}catch(e){return fail(e.message)}
+  if(S.tab!=='profile')return;
   const free=m.sub==='default';
   $('#v').innerHTML=`<h1>Профиль</h1>
   <div class="card"><b>${free?'Бесплатный тариф':'Подписка активна'}</b>
@@ -159,6 +208,7 @@ document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-a]');if(!b)return;
   const a=b.dataset.a;
   if(a==='home')home();
+  else if(a==='reset'){S.job=null;S.sel.clear();stopPoll();home()}
   else if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
   else if(a==='subs'){S.subs=!S.subs;momentsView()}
   else if(a==='fmt'){S.vert=!S.vert;momentsView()}
@@ -178,7 +228,9 @@ document.addEventListener('change',e=>{
   }else S.sel.delete(+i);
   paintSel();
 });
-home();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.timer)tick()});
+// при запуске: если на сервере уже есть задача этого пользователя — показать её
+restore();
 </script>
 </body>
 </html>

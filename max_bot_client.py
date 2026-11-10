@@ -142,18 +142,24 @@ class MaxBot:
             "format": "markdown",
             "attachments": [{"type": "video", "payload": {"token": token}}]
         }
-        try:
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-                async with session.post(url, json=payload, headers=self.headers) as resp:
-                    if resp.status in (200, 201):
-                        data = await resp.json()
-                        return data.get("id") or (data.get("message") or {}).get("body", {}).get("mid")
-                    else:
-                        print(f"[MAX send_video] {resp.status}: {await resp.text()}")
+        for attempt in range(12):                      # ~ до 2-3 минут ожидания
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+                    async with session.post(url, json=payload, headers=self.headers) as resp:
+                        if resp.status in (200, 201):
+                            data = await resp.json()
+                            return data.get("id") or (data.get("message") or {}).get("body", {}).get("mid")
+                        body = await resp.text()
+                        if resp.status == 400 and "not.ready" in body:
+                            await asyncio.sleep(3 + attempt * 2)   # MAX ещё обрабатывает видео
+                            continue
+                        print(f"[MAX send_video] {resp.status}: {body}")
                         return None
-        except Exception as e:
-            print(f"[MAX send_video] {e}")
-            return None
+            except Exception as e:
+                print(f"[MAX send_video] {e}")
+                return None
+        print("[MAX send_video] видео так и не обработалось")
+        return None
 
     async def send_document(self, chat_id: int, file_path: str, caption: str = ""):
         token = await self.upload_document(file_path)

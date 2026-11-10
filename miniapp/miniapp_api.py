@@ -189,14 +189,16 @@ async def _render(job: Job, mode: str, idxs: list, subs: bool, vertical: bool):
                     r = await asyncio.to_thread(engine.process_video, job.path, str(job.user_id), premium)
                     outs.append(r["video_path"])
                     job.progress = "Отправляю в чат"
-                    await bot.send_video(job.chat_id, r["video_path"], caption="✅ Твоё видео с субтитрами!")
+                    if not await bot.send_video(job.chat_id, final, caption=f"✅ Клип #{n}"):
+                        raise RuntimeError("не удалось отправить клип") 
                     if r.get("srt_path"):
                         txt = r["srt_path"][:-4] + ".txt"
                         os.replace(r["srt_path"], txt)
                         outs.append(txt)
                         await bot.send_document(job.chat_id, txt, caption="📄 Файл субтитров")
                 else:
-                    await bot.send_video(job.chat_id, job.path, caption="✅ Твоё видео")
+                    if not await bot.send_video(job.chat_id, final, caption=f"✅ Клип #{n}"):
+                        raise RuntimeError("не удалось отправить клип")                   
             else:
                 premium = await _charge(job)
                 job.total = len(idxs)
@@ -222,7 +224,8 @@ async def _render(job: Job, mode: str, idxs: list, subs: bool, vertical: bool):
                         final = clip[:-4] + "_v.mp4"
                         await asyncio.to_thread(engine.crop_to_vertical, clip, final)
                         outs.append(final)
-                    await bot.send_video(job.chat_id, final, caption=f"✅ Клип #{n}")
+                    if not await bot.send_video(job.chat_id, final, caption=f"✅ Клип #{n}"):
+                        raise RuntimeError("не удалось отправить клип")
                     job.done = n
         job.status = "done"
     except ApiError as e:

@@ -223,12 +223,14 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     return out_wav
 
 
-def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
+def _ytdlp_section_sync(url: str, start: float, end: float, stem: str,
+                        max_height: int = 1080) -> str:
     import yt_dlp
     from yt_dlp.utils import download_range_func
     opts = {
         "outtmpl": stem + ".%(ext)s",
-        "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b",
+        "format": (f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]/"
+                   f"bv*[height<={max_height}]+ba/b"),
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
@@ -248,7 +250,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str) -> str:
         return _final_path(ydl, info, stem)
 
 
-async def download_section(url: str, start: float, end: float, out_path: str) -> str:
-    """Качает из интернета ТОЛЬКО фрагмент видео (для ссылок)."""
+async def download_section(url: str, start: float, end: float, out_path: str,
+                           max_height: int = 1080) -> str:
     stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
-    return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem)
+    return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem, max_height)

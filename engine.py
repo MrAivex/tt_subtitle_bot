@@ -196,6 +196,44 @@ class VideoEngine:
                        check=True, capture_output=True, text=True)
 
 
+
+    def make_preview(self, src: str, start: float, end: float, out_path: str,
+                 max_height: int = 360) -> str:
+        """Быстрое 360p-превью фрагмента со звуком для плеера мини-аппы."""
+        try:
+            w, h = self.get_video_resolution(src)
+            vf = f"scale=-2:{max_height}" if w >= h else f"scale={max_height}:-2"
+        except Exception:
+            vf = f"scale=-2:{max_height}"
+        cmd = [self.ffmpeg, "-y",
+            "-ss", f"{max(0.0, start):.2f}", "-i", src,
+            "-t", f"{max(1.0, end - start):.2f}",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+            "-c:a", "aac", "-b:a", "64k",
+            "-threads", "2",
+            "-movflags", "+faststart",
+            out_path]
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        if p.returncode != 0:
+            raise RuntimeError(f"ffmpeg preview: {p.stderr[-300:]}")
+        return out_path
+
+    def faststart(self, path: str) -> str:
+        """Ремультиплексация без перекодирования: moov в начало файла."""
+        tmp = path + ".faststart.mp4"
+        p = subprocess.run([self.ffmpeg, "-y", "-i", path,
+                            "-c", "copy", "-movflags", "+faststart", tmp],
+                        capture_output=True, text=True)
+        if p.returncode != 0:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            return path
+        os.replace(tmp, path)
+        return path
+        
+
+
     def crop_to_vertical(self, video_path: str, out_path: str):
         """Центральная обрезка в 9:16 (без растягивания и чёрных полос)."""
         w, h = self.get_video_resolution(video_path)

@@ -372,3 +372,11 @@ def register_miniapp(app: web.Application):
     app.add_subapp("/api", api)
     app.router.add_get("/app", _index)
     app.router.add_get("/app/", _index)
+
+
+def _cleanup_job(j: Job):
+    _rm(j.path)  # ← было rm
+    for i in range(len(j.moments)):
+        _rm(f"downloads/prev_{j.id}_{i}.mp4")
+    for r in j.renders.values():
+        _rm(r.get("path"))

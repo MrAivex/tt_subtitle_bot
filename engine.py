@@ -114,7 +114,7 @@ class VideoEngine:
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_tmp)],
                            check=True, capture_output=True, text=True)
-             return self.scan_audio_wav(str(audio_tmp), max_moments)
+            return self.scan_audio_wav(str(audio_tmp), max_moments)
         finally:
             if audio_tmp.exists():
                 audio_tmp.unlink()

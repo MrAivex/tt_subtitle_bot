@@ -15,6 +15,9 @@ from link_downloader import detect_platform, download_audio_only, download_by_li
 from payments import create_payment
 from subscriptions import SUBSCRIPTIONS
 
+import logging
+log = logging.getLogger("timing")
+
 SCAN_SLOTS = asyncio.Semaphore(2)    # скачивание звука и numpy, нагрузка лёгкая
 RENDER_SLOTS = asyncio.Semaphore(1)  # whisper и ffmpeg
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
@@ -29,20 +32,35 @@ class ApiError(Exception):
 
 
 # ---------- авторизация: проверка initData ----------
+def _webapp_secrets():
+    t = (MAX_TOKEN or "").encode()
+    return [
+        ("telegram",  hmac.new(b"WebAppData", t, hashlib.sha256).digest()),
+        ("reverse",   hmac.new(t, b"WebAppData", hashlib.sha256).digest()),
+        ("raw_token", t),
+        ("sha_token", hashlib.sha256(t).digest()),
+    ]
+
+
 def validate_init_data(raw: str, max_age: int = 24 * 3600):
-    """Возвращает user_id или None. Алгоритм из dev.max.ru/docs/webapps/validation."""
     pairs = dict(parse_qsl(raw or "", keep_blank_values=True))
     got = pairs.pop("hash", "")
     if not got:
+        log.warning(f"[AUTH] initData без hash: len={len(raw or '')}, ключи={sorted(pairs)}")
         return None
     check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-    secret = hmac.new(b"WebAppData", MAX_TOKEN.encode(), hashlib.sha256).digest()
-    calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(calc, got):
+    for name, secret in _webapp_secrets():
+        calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(calc, got):
+            log.info(f"[AUTH] initData подошла по схеме '{name}'")
+            break
+    else:
+        log.warning(f"[AUTH] hash не совпал ни по одной схеме: ключи={sorted(pairs)}, got={got[:12]}…")
         return None
     ts = int(pairs.get("auth_date") or 0)
-    ts = ts / 1000 if ts > 1e11 else ts            # в примерах бывают и секунды, и миллисекунды
+    ts = ts / 1000 if ts > 1e11 else ts
     if time.time() - ts > max_age:
+        log.warning("[AUTH] initData просрочена")
         return None
     try:
         return int(json.loads(pairs["user"])["id"])

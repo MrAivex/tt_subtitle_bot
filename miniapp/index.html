@@ -87,14 +87,16 @@ nav button.on{color:var(--acc)}
 <script>
 const $=s=>document.querySelector(s),W=window.WebApp;
 try{W&&W.ready()}catch(e){}
+const INIT_RAW=(W&&W.initData)||new URLSearchParams(location.search).get('init_data')||'';
 const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null,tab:'home',up:null,seq:0};
 const P={jobId:null,cur:-1,times:new Map(),drag:false};      // состояние плеера
 const thumbs=new Map(); let thumbVer=0, thumbBusy=false;      // кадры для галереи
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=t=>{t=Math.max(0,Math.round(t||0));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;
   return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')};
-const hdr=()=>({'X-Init-Data':(W&&W.initData)||''});
+const hdr=()=>({'X-Init-Data':INIT_RAW});
 const mediaUrl=(kind,idx)=>`/api/jobs/${S.job.id}/${kind}/${idx}?t=${S.job.media_token||''}`;
+setTimeout(()=>toast('dbg: W='+(window.WebApp?'y':'n')+' Max='+(window.MaxWebApp?'y':'n')+' len='+INIT_RAW.length),1000);
 const renders=()=>(S.job&&S.job.renders)||{};
 const busy=()=>{const j=S.job;if(!j)return false;
   return j.status==='scanning'||j.previews_status==='pending'||Object.values(renders()).some(r=>r.status==='pending')};
@@ -348,7 +350,7 @@ async function start(p,b){
 function upload(f){
   S.up={pct:0};paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
-  x.setRequestHeader('X-Init-Data',(W&&W.initData)||'');
+  INIT_RAW
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
     S.up.pct=Math.round(e.loaded/e.total*100);

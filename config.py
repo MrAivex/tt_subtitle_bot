@@ -34,3 +34,6 @@ DOWNLOAD_PROXY = os.getenv("DOWNLOAD_PROXY", "")
 PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")
 
 BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")
+
+
+PORT = int(os.getenv("PORT", "8081"))

@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import os
 from aiohttp import web
 import logging
 from apscheduler.triggers.cron import CronTrigger
@@ -94,12 +95,17 @@ async def register_webhook():
 
 
 async def main():
-    ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
+    if os.getenv("UPDATE_YTDLP", "1") != "0":
+        ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
 
         
     await init_db_max()
     warmup_task = asyncio.create_task(asyncio.to_thread(engine.warmup))
-    await register_webhook()
+
+    if os.getenv("REGISTER_WEBHOOK", "1") != "0":
+        await register_webhook()
+    else:
+        print("⚠️ REGISTER_WEBHOOK=0 — вебхук не регистрирую", flush=True)
 
     # Планировщик
     scheduler.add_job(

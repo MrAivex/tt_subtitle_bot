@@ -247,7 +247,9 @@ async def start_processing(chat_id: int, user_id: int):
             lines = ["🎬 *Нашёл крутые моменты!*\n"]
             for i, m in enumerate(moments, 1):
                 s, e = m["start"], m["end"]
-                lines.append(f"*{i}.* {format_moment_time(s)} – {format_moment_time(e)} ({int(e - s)} сек, громкость x{m['energy']})")
+                lines.append(f"*{i}.* {m.get('label', 'Яркий момент')} · {format_moment_time(s)} – {format_moment_time(e)} ({int(e - s)} сек)")
+            if m.get("snippet"):
+                lines.append(f"    «{m['snippet']}»")
             lines.append("\nКакие моменты нарезать?")
             lines.append("Напиши номера через запятую (например: 1, 3)")
             lines.append("/cancel — отмена.")

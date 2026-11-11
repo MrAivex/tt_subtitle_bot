@@ -11,6 +11,7 @@ import numpy as np
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from utils import timed
+from highlight_analyzer import analyze_audio
 
 
 # Типичные галлюцинации Whisper на шуме/тишине (подписи из обучающих данных)
@@ -113,10 +114,7 @@ class VideoEngine:
         try:
             subprocess.run([self.ffmpeg, "-y", "-i", str(v_path), "-ar", "16000", "-ac", "1", str(audio_tmp)],
                            check=True, capture_output=True, text=True)
-            moments = self._find_energy_peaks(str(audio_tmp))
-            duration = self.get_video_duration(str(v_path))
-            clips = self._select_moments(moments, duration, count=max_moments)
-            return {"duration": duration, "moments": clips}
+             return self.scan_audio_wav(str(audio_tmp), max_moments)
         finally:
             if audio_tmp.exists():
                 audio_tmp.unlink()
@@ -459,9 +457,9 @@ class VideoEngine:
 
 
     def scan_audio_wav(self, wav_path: str, max_moments: int = 5) -> Dict:
-        """Сканирует готовый WAV (16 kHz mono): длительность + моменты."""
-        with wave.open(wav_path, "rb") as wf:
-            duration = wf.getnframes() / float(wf.getframerate())
-        moments = self._find_energy_peaks(wav_path)
-        clips = self._select_moments(moments, duration, count=max_moments)
-        return {"duration": duration, "moments": clips}
+        return analyze_audio(wav_path, max_moments, asr=self._asr_chunk)
+
+    def _asr_chunk(self, audio: np.ndarray) -> str:
+        segs, _ = self.model.transcribe(audio, language="ru", beam_size=1, vad_filter=True,
+                                        condition_on_previous_text=False, temperature=0.0)
+        return " ".join(s.text.strip() for s in segs if not self._is_garbage_segment(s))

@@ -92,7 +92,7 @@ function momentsView(){
   const j=S.job,ms=j.moments;
   const track=ms.map((m,i)=>`<i class="seg ${S.sel.has(i)?'on':''}" data-s="${i}" style="left:${m.start/j.duration*100}%;width:${Math.max(1.5,(m.end-m.start)/j.duration*100)}%"></i>`).join('');
   const rows=ms.map((m,i)=>`<label class="row"><input type="checkbox" data-i="${i}" ${S.sel.has(i)?'checked':''}>
-    <span><b>${fmt(m.start)}–${fmt(m.end)}</b><small>${Math.round(m.end-m.start)} с, громкость ×${m.energy}</small></span></label>`).join('');
+    <span><b>${fmt(m.start)}–${fmt(m.end)}</b><small>${esc(m.label||'Яркий момент')} · ${Math.round(m.end-m.start)} с</small>${m.snippet?`<small>«${esc(m.snippet)}»</small>`:''}</span></label>`).join('');
   $('#v').innerHTML=`<h1>${ms.length?'Найдено моментов: '+ms.length:'Ярких моментов нет'}</h1>
   <p class="sub ${j.error?'err':''}">${esc(j.error||(ms.length?'Выбери до 3 клипов. Длина видео: '+fmt(j.duration):'Можно наложить субтитры на всё видео.'))}</p>
   ${ms.length?`<div class="track">${track}</div>${rows}`:''}

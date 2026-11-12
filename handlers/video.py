@@ -16,6 +16,7 @@ from services_max import (
 from app import bot, engine, session_manager
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
 from utils import extract_video_attachment, download_video, format_moment_time, timed
+from config import MINIAPP_URL
 
 logger = logging.getLogger(__name__)
 
@@ -24,60 +25,12 @@ logger = logging.getLogger(__name__)
 # Обычное видео (полное субтитрирование)
 # ------------------------------------------------------------
 async def handle_video(chat_id: int, user_id: int, att: dict):
-    """Скачивает видео и показывает меню настроек обработки."""
-    is_admin = user_id in ADMIN_IDS
-
-    async with async_session_max() as session:
-        user = await get_or_create_user(session, user_id, chat_id)
-        if not is_admin and not can_process_video(user):
-            await bot.send_message(
-                chat_id,
-                "😔 Закончились бесплатные видео на сегодня (3/день).\n"
-                "Возвращайся завтра или оформи подписку через /pay.",
-            )
-            return
-
-    status_id = await bot.send_message(chat_id, "📥 Скачиваю видео...")
-
-    # Защита по размеру
-    size = att.get("size") or 0
-    if size and size > MAX_FILE_SIZE_BYTES:
-        await bot.edit_message(chat_id, status_id, "❌ Файл больше 2.5 ГБ — подрежь видео и отправь ещё раз.")
-        return
-
-    # Получение URL
-    video_url = att.get("url")
-    if not video_url and att.get("token"):
-        video_url = await bot.get_video_url(att["token"])
-    if not video_url:
-        await bot.edit_message(chat_id, status_id, "❌ Не удалось получить ссылку на видео.")
-        return
-
-    # Скачивание
-    os.makedirs("downloads", exist_ok=True)
-    input_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.mp4"
-
-    try:
-        await download_video(video_url, input_path)
-    except Exception as e:
-        print(f"[VIDEO ERROR] {type(e).__name__}: {e}", flush=True)
-        traceback.print_exc()
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка скачивания: {type(e).__name__}: {e}")
-        return
-
-    # Сохраняем видео в состояние и показываем начальное меню
-    session_manager.set_awaiting_video(user_id, chat_id)
-    session_manager.set_video_path(user_id, input_path)
-
-    from keyboards import initial_options_kb
-    await bot.edit_message(
-        chat_id, status_id,
-        "🎬 Видео скачано! Что сделать?",
-        reply_markup=initial_options_kb()
+    await bot.send_message(
+        chat_id,
+        "🎬 Вся обработка в мини-приложении: превью клипов, плеер и скачивание.\n"
+        f"Открой его и загрузи видео или ссылку там 👉 {MINIAPP_URL}",
+        reply_markup=__import__("keyboards").main_menu_kb(),
     )
-
-    # Сохраняем message_id для редактирования
-    session_manager.get_state(user_id).message_id = status_id
 
 
 # ------------------------------------------------------------

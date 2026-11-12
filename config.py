@@ -37,3 +37,6 @@ BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")
 
 
 PORT = int(os.getenv("PORT", "8081"))
+
+MINIAPP_URL = os.getenv("MINIAPP_URL", "https://subtitle-bot.ru/app/")
+PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", MINIAPP_URL)

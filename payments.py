@@ -8,6 +8,7 @@ import os
 import logging
 import requests
 from requests.adapters import HTTPAdapter
+from config import PAYMENT_RETURN_URL
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = 
                 },
                 "confirmation": {
                     "type": "redirect",
-                    "return_url": "https://t.me/tt_subtitle_bot"
+                    "confirmation": {"type": "redirect", "return_url": PAYMENT_RETURN_URL},
                 },
                 "capture": True,
                 "description": f"Подписка {sub['name']}",

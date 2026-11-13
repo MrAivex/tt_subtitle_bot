@@ -61,6 +61,7 @@ nav button.on{color:var(--acc)}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
 .tile{position:relative;aspect-ratio:16/10;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--card);cursor:pointer}
 .tile.cur{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+.tile.sel{border-color:var(--acc)}
 .tile img{width:100%;height:100%;object-fit:cover;display:block}
 .tile .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;
   background:linear-gradient(110deg,var(--card) 30%,var(--bg) 50%,var(--card) 70%);background-size:220% 100%;animation:shim 1.4s infinite}
@@ -87,16 +88,15 @@ nav button.on{color:var(--acc)}
 <script>
 const $=s=>document.querySelector(s),W=window.WebApp;
 try{W&&W.ready()}catch(e){}
-const INIT_RAW=(W&&W.initData)||new URLSearchParams(location.search).get('init_data')||'';
+const initData=()=>(W&&W.initData)||new URLSearchParams(location.search).get('init_data')||'';
+const hdr=()=>({'X-Init-Data':initData()});
 const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null,tab:'home',up:null,seq:0};
 const P={jobId:null,cur:-1,times:new Map(),drag:false};      // состояние плеера
 const thumbs=new Map(); let thumbVer=0, thumbBusy=false;      // кадры для галереи
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=t=>{t=Math.max(0,Math.round(t||0));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;
   return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')};
-const hdr=()=>({'X-Init-Data':INIT_RAW});
 const mediaUrl=(kind,idx)=>`/api/jobs/${S.job.id}/${kind}/${idx}?t=${S.job.media_token||''}`;
-setTimeout(()=>toast('dbg: W='+(window.WebApp?'y':'n')+' Max='+(window.MaxWebApp?'y':'n')+' len='+INIT_RAW.length),1000);
 const renders=()=>(S.job&&S.job.renders)||{};
 const busy=()=>{const j=S.job;if(!j)return false;
   return j.status==='scanning'||j.previews_status==='pending'||Object.values(renders()).some(r=>r.status==='pending')};
@@ -133,8 +133,10 @@ function fail(t){
 /* ---------- плеер ---------- */
 function buildPlayerBox(){
   const j=S.job;
-  if(P.jobId!==j.id){
-    P.jobId=j.id;P.cur=-1;P.times.clear();thumbs.clear();thumbVer++;galSig='';
+  const fresh = P.jobId!==j.id;
+  if(fresh || !$('#pv')){
+    if(fresh){P.times.clear();thumbs.clear();thumbVer++;galSig='';}
+    P.jobId=j.id;P.cur=-1;
     $('#pbox').innerHTML=`<div class="player">
       <video id="pv" playsinline preload="metadata"></video>
       <span class="ptag" id="ptag"></span>
@@ -152,6 +154,7 @@ function buildPlayerBox(){
   if(P.cur===-1){
     const first=(j.previews||[]).find(p=>p.status==='ready');
     if(first)loadClip(first.idx);
+    else if(!j.moments.length){$('#pbox').hidden=true;}
     else{
       const pl=$('#pload');pl.hidden=false;
       pl.innerHTML=j.previews_status==='error'?'Превью не удалось':(j.moments.length?'<span class="spin"></span> Превью готовится…':'');
@@ -175,6 +178,10 @@ function bindPlayer(){
   tr.addEventListener('pointermove',e=>{if(P.drag)seek(e)});
   tr.addEventListener('pointerup',()=>P.drag=false);
   tr.addEventListener('pointercancel',()=>P.drag=false);
+    v.addEventListener('error',()=>{
+    const pl=$('#pload');
+    if(pl){pl.hidden=false;pl.innerHTML='Не удалось загрузить превью';}
+  });
 }
 function pui(){
   const v=$('#pv');if(!v)return;
@@ -218,7 +225,11 @@ function updateGallery(){
     const r=renders()[String(i)];
     const th=thumbs.get(i);
     let inner;
-    if(p&&p.status==='ready')inner=th?`<img src="${th}" alt="">`:`<span class="ph">…</span>`;
+    if(p&&p.status==='ready'){
+      inner = th ? `<img src="${th}" alt="">`
+            : thumbs.has(i) ? `<span class="ph" style="animation:none">▶</span>`
+            : `<span class="ph"></span>`;
+    }
     else if(p&&p.status==='error')inner=`<span class="ph" style="animation:none">✕</span>`;
     else inner=`<span class="ph"></span>`;
     return `<div class="tile ${S.sel.has(i)?'sel':''} ${P.cur===i?'cur':''}" data-i="${i}">
@@ -247,14 +258,18 @@ function genThumb(idx,url){
     v.onerror=()=>{clearTimeout(to);res(null)};
   });
 }
+
 async function queueThumbs(){
   const j=S.job;if(!j||thumbBusy)return;thumbBusy=true;
-  for(const p of (j.previews||[])){
-    if(p.status!=='ready'||thumbs.has(p.idx))continue;
-    const u=await genThumb(p.idx,mediaUrl('preview',p.idx));
-    if(u){thumbs.set(p.idx,u);thumbVer++;updateGallery()}
-  }
-  thumbBusy=false;
+  try{
+    for(const p of (j.previews||[])){
+      if(S.job!==j)break;                    // задачу сменили — выходим
+      if(p.status!=='ready'||thumbs.has(p.idx))continue;
+      const u=await genThumb(p.idx,mediaUrl('preview',p.idx));
+      thumbs.set(p.idx,u||null);
+      thumbVer++;updateGallery();
+    }
+  }finally{thumbBusy=false}
 }
 
 /* ---------- выбор / скачивание ---------- */
@@ -302,7 +317,10 @@ function paint(){
   }
   const ms=j.moments||[];
   $('#mh').textContent=ms.length?`Найдено моментов: ${ms.length}`:'Ярких моментов нет';
-  $('#ms').textContent=j.error||(ms.length?'Смотри превью, отмечай галочками нужные — большая кнопка внизу подготовит и скачает их.':'Можно наложить субтитры на всё видео.');
+    $('#ms').textContent = j.error || (
+    j.previews_status==='pending' && j.progress ? j.progress :
+    ms.length ? 'Смотри превью, отмечай галочками нужные — большая кнопка внизу подготовит и скачает их.'
+              : 'Можно наложить субтитры на всё видео.');
   buildPlayerBox();
   updateGallery();
   updateOpts();
@@ -350,7 +368,7 @@ async function start(p,b){
 function upload(f){
   S.up={pct:0};paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
-  INIT_RAW
+  x.setRequestHeader('X-Init-Data',initData());
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
     S.up.pct=Math.round(e.loaded/e.total*100);

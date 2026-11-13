@@ -5,7 +5,7 @@ from urllib.parse import unquote
 
 from aiohttp import web
 
-from app import bot, engine
+from app import engine
 from config import (MAX_TOKEN, ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC,
                     MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST)
 from database_max import async_session_max
@@ -24,7 +24,7 @@ RENDER_SLOTS = asyncio.Semaphore(1)
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
-SECRET = (MAX_TOKEN or "secret").encode()
+SECRET = MAX_TOKEN.encode() if MAX_TOKEN else os.urandom(32)
 
 
 class ApiError(Exception):
@@ -125,26 +125,35 @@ def _prev_path(job_id: str, idx: int) -> str:
 @web.middleware
 async def _mw(request, handler):
     dbg = os.getenv("AUTH_DEBUG") == "1"
+    path = request.path
     raw = request.headers.get("X-Init-Data", "")
     try:
+        # Медиа: <video src> и <a download> не шлют заголовков — авторизуем токеном ?t=
+        if path.startswith("/api/jobs/") and ("/preview/" in path or "/download/" in path):
+            jid = path.split("/")[3]
+            if hmac.compare_digest(request.query.get("t", ""), _media_token(jid)):
+                job = JOBS.get(jid)
+                if job:
+                    request["uid"] = job.user_id
+                    return await handler(request)
+            raise ApiError("Открой приложение из MAX", 401)
+
         uid = validate_init_data(raw)
         if dbg:
-            log.warning(f"[REQ] {request.method} {request.path} "
-                        f"initData_len={len(raw)} uid={uid}")
+            log.warning(f"[REQ] {request.method} {path} initData_len={len(raw)} uid={uid}")
         if not uid:
             raise ApiError("Открой приложение из MAX", 401)
         request["uid"] = uid
         return await handler(request)
     except ApiError as e:
         if dbg:
-            log.warning(f"[REQ] {request.path} → {e.code}: {e.msg}")
+            log.warning(f"[REQ] {path} → {e.code}: {e.msg}")
         return web.json_response({"error": e.msg}, status=e.code)
     except web.HTTPException:
         raise
     except Exception as e:
         traceback.print_exc()
         return web.json_response({"error": f"{type(e).__name__}: {str(e)[:150]}"}, status=500)
-
 
 # ---------- задачи ----------
 
@@ -174,7 +183,7 @@ class Job:
         d = {k: getattr(self, k) for k in
              ("id", "status", "progress", "done", "total", "error",
               "duration", "moments", "previews", "previews_status")}
-        d["renders"] = {str(k): {kk: vv for kk, vv in v.items() if kk != "path"}
+        d["renders"] = {str(k): {kk: vv for kk, vv in v.items() if kk not in ("path", "extra")}
                         for k, v in self.renders.items()}
         d["media_token"] = _media_token(self.id)
         return d
@@ -201,7 +210,7 @@ def _cleanup_job(j: Job):
     for i in range(len(j.moments)):
         _rm(_prev_path(j.id, i))
     for r in j.renders.values():
-        _rm(r.get("path"))
+        _rm(r.get("path"), *r.get("extra", []))
 
 
 async def _user(uid):
@@ -305,7 +314,7 @@ async def _scan(job: Job, url: str = ""):
 # ---------- рендер полного качества ----------
 
 async def _render_one(job: Job, idx: int, subs: bool, vertical: bool):
-    """idx = -1 — всё видео целиком."""
+    extra = []                      # ← файлы, которые надо удалить вместе с рендером
     try:
         async with RENDER_SLOTS:
             if not job.charged:
@@ -319,11 +328,14 @@ async def _render_one(job: Job, idx: int, subs: bool, vertical: bool):
                 if job.source_url and src.endswith(".wav"):
                     job.progress = "Качаю полное видео"
                     src = await download_by_link(job.source_url, job.path[:-4] + ".mp4")
+                    extra.append(src)
                 job.progress = "Субтитры на всё видео"
                 r = await asyncio.to_thread(engine.process_video, src, str(job.user_id),
                                             job.premium, None, vertical)
+                if r.get("srt_path"):
+                    extra.append(r["srt_path"])
                 job.renders[idx] = {"status": "ready", "path": r["video_path"],
-                                    "name": "full_subtitled.mp4"}
+                                    "name": "full_subtitled.mp4", "extra": extra}
             else:
                 m = job.moments[idx]
                 job.progress = f"Клип {idx + 1}"
@@ -338,18 +350,25 @@ async def _render_one(job: Job, idx: int, subs: bool, vertical: bool):
                     r = await asyncio.to_thread(engine.process_video, clip, str(job.user_id),
                                                 job.premium, None, vertical)
                     final = r["video_path"]
+                    if r.get("srt_path"):
+                        extra.append(r["srt_path"])
+                    if final != clip:
+                        extra.append(clip)
                 elif vertical:
                     v = clip[:-4] + "_v.mp4"
                     await asyncio.to_thread(engine.crop_to_vertical, clip, v)
                     final = v
-                job.renders[idx] = {"status": "ready", "path": final, "name": f"clip_{idx + 1}.mp4"}
+                    extra.append(clip)
+                job.renders[idx] = {"status": "ready", "path": final,
+                                    "name": f"clip_{idx + 1}.mp4", "extra": extra}
             job.progress = ""
     except ApiError as e:
+        _rm(*extra)
         job.renders[idx] = {"status": "error", "error": e.msg}
     except Exception as e:
         traceback.print_exc()
+        _rm(*extra)
         job.renders[idx] = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:120]}"}
-
 
 # ---------- хендлеры ----------
 
@@ -426,6 +445,11 @@ async def api_prepare(request):
     idx = int(body.get("idx", -1))
     if idx != -1 and not (0 <= idx < len(job.moments)):
         raise ApiError("Неверный момент")
+    if idx != -1:
+        active = [k for k, v in job.renders.items()
+                  if k != -1 and v.get("status") in ("pending", "ready")]
+        if idx not in job.renders and len(active) >= MAX_CLIPS_PER_REQUEST:
+            raise ApiError(f"Не больше {MAX_CLIPS_PER_REQUEST} клипов за раз")
     if job.status != "ready":
         raise ApiError("Задача сейчас занята", 409)
     cur = job.renders.get(idx)

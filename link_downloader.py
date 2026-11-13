@@ -252,5 +252,6 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str,
 
 async def download_section(url: str, start: float, end: float, out_path: str,
                            max_height: int = 1080) -> str:
+    """Качает из интернета ТОЛЬКО фрагмент видео (для ссылок)."""
     stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
     return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem, max_height)

@@ -17,6 +17,8 @@ from app import bot, engine, session_manager
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
 from utils import extract_video_attachment, download_video, format_moment_time, timed
 from config import MINIAPP_URL
+from config import MINIAPP_URL
+from keyboards import main_menu_kb
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ async def handle_video(chat_id: int, user_id: int, att: dict):
         chat_id,
         "🎬 Вся обработка в мини-приложении: превью клипов, плеер и скачивание.\n"
         f"Открой его и загрузи видео или ссылку там 👉 {MINIAPP_URL}",
-        reply_markup=__import__("keyboards").main_menu_kb(),
+        reply_markup=main_menu_kb(),
     )
 
 
@@ -276,50 +278,9 @@ async def start_processing(chat_id: int, user_id: int):
 
 
 async def handle_link_download(chat_id: int, user_id: int, url: str):
-    """Ссылка: быстро качаем аудио, размечаем моменты, показываем меню."""
-    is_admin = user_id in ADMIN_IDS
-    async with async_session_max() as session:
-        user = await get_or_create_user(session, user_id, chat_id)
-        if not is_admin and not can_process_video(user):
-            await bot.send_message(chat_id, "😔 Закончились бесплатные видео на сегодня (3/день).\nВозвращайся завтра или оформи подписку через /pay.")
-            return
-
-    from link_downloader import detect_platform, download_audio_only
-    platform = detect_platform(url)
-    status_id = await bot.send_message(chat_id, f"🔗 Распознал: {platform}. Качаю аудиодорожку (быстро)...")
-
-    os.makedirs("downloads", exist_ok=True)
-    wav_path = f"downloads/max_{user_id}_{uuid.uuid4().hex[:8]}.wav"
-
-    try:
-        await download_audio_only(url, wav_path)
-    except Exception as e:
-        logger.error(f"[LINK AUDIO ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}")
-        await bot.edit_message(chat_id, status_id, f"❌ Не удалось скачать аудио: {type(e).__name__}: {str(e)[:150]}")
-        return
-
-    await bot.edit_message(chat_id, status_id, "🔍 Сканирую дорожку на крутые моменты...")
-    try:
-        with timed("сканирование пиков"):
-            result = await asyncio.to_thread(engine.scan_audio_wav, wav_path, MAX_HIGHLIGHTS)
-    except Exception as e:
-        logger.error(f"[SCAN AUDIO ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}")
-        await bot.edit_message(chat_id, status_id, f"❌ Ошибка сканирования: {type(e).__name__}: {str(e)[:150]}")
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
-        return
-
-    moments = result.get("moments", [])
-
-    session_manager.set_awaiting_video(user_id, chat_id)
-    state = session_manager.get_state(user_id)
-    state.source_url = url
-    state.video_path = wav_path   # wav живёт в state для очистки
-    state.moments = moments       # моменты УЖЕ готовы
-    state.message_id = status_id
-
-    from keyboards import initial_options_kb
-    text = (f"🎬 Готово! Нашёл {len(moments)} крутых моментов. Что дальше?"
-            if moments else
-            "🎬 Дорожка скачана, но ярких моментов не нашёл. Могу наложить субтитры на полное видео.")
-    await bot.edit_message(chat_id, status_id, text, reply_markup=initial_options_kb())
+    await bot.send_message(
+        chat_id,
+        "🎬 Вся обработка в мини-приложении: превью клипов, плеер и скачивание.\n"
+        f"Открой его и загрузи видео или ссылку там 👉 {MINIAPP_URL}",
+        reply_markup=main_menu_kb(),
+    )   

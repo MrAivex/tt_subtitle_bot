@@ -1,7 +1,7 @@
 """API мини-приложения MAX. Подключение: register_miniapp(app) в main.py."""
 import asyncio, hashlib, hmac, json, os, time, traceback, uuid
 from dataclasses import dataclass, field
-from urllib.parse import parse_qsl
+from urllib.parse import unquote
 
 from aiohttp import web
 
@@ -15,11 +15,14 @@ from link_downloader import detect_platform, download_audio_only, download_by_li
 from payments import create_payment
 from subscriptions import SUBSCRIPTIONS
 
+
+
 import logging
 log = logging.getLogger("timing")
 
-SCAN_SLOTS = asyncio.Semaphore(2)    # скачивание звука и numpy, нагрузка лёгкая
-RENDER_SLOTS = asyncio.Semaphore(1)  # whisper и ffmpeg
+SCAN_SLOTS = asyncio.Semaphore(2)
+PREVIEW_SLOTS = asyncio.Semaphore(2)   # ← новый
+RENDER_SLOTS = asyncio.Semaphore(1)
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,28 +45,71 @@ def _webapp_secrets():
     ]
 
 
+# ---------- авторизация: проверка initData (dev.max.ru → Валидация данных) ----------
+
+def _auth_tokens():
+    """Токены, чьей подписью может быть подписана initData.
+    В проде — только MAX_TOKEN. На тестовом стенде можно добавить свои же
+    токены через MAX_EXTRA_TOKENS (через запятую), чтобы вход работал
+    из любого твоего бота. В прод-окружении переменная не задаётся."""
+    tokens = [MAX_TOKEN or ""]
+    tokens += [t.strip() for t in os.getenv("MAX_EXTRA_TOKENS", "").split(",")]
+    return [t for t in tokens if t]
+
+
+def _parse_init_data(raw: str):
+    """Пары initData. Значения декодируются как decodeURIComponent (unquote),
+    а НЕ как form-data (unquote_plus): литеральный '+' остаётся плюсом.
+    MAX отдаёт имена вида 'White+and+Black' — на этом parse_qsl ломал подпись."""
+    s = raw or ""
+    if "WebAppData=" in s:                      # если пришёл весь фрагмент URL
+        s = s.split("WebAppData=", 1)[1]
+        s = s.split("&WebAppPlatform", 1)[0].split("#", 1)[0]
+        s = unquote(s)                          # снять внешний слой кодирования
+    pairs, seen = [], set()
+    for part in s.split("&"):
+        if not part:
+            continue
+        k, _, v = part.partition("=")
+        k, v = unquote(k), unquote(v)
+        if k in seen:                           # по доке: каждый параметр ровно один раз
+            return None
+        seen.add(k)
+        pairs.append((k, v))
+    return pairs
+
+
 def validate_init_data(raw: str, max_age: int = 24 * 3600):
-    pairs = dict(parse_qsl(raw or "", keep_blank_values=True))
-    got = pairs.pop("hash", "")
-    if not got:
-        log.warning(f"[AUTH] initData без hash: len={len(raw or '')}, ключи={sorted(pairs)}")
+    """Возвращает user_id или None."""
+    pairs = _parse_init_data(raw)
+    if not pairs:
         return None
-    check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-    for name, secret in _webapp_secrets():
-        calc = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    hashes = [v for k, v in pairs if k == "hash"]
+    if len(hashes) != 1:                        # по доке: hash ровно один
+        return None
+    got = hashes[0]
+    body = sorted((k, v) for k, v in pairs if k != "hash")
+    launch_params = "\n".join(f"{k}={v}" for k, v in body).encode()
+
+    matched = False
+    for tok in _auth_tokens():
+        secret = hmac.new(b"WebAppData", tok.encode(), hashlib.sha256).digest()
+        calc = hmac.new(secret, launch_params, hashlib.sha256).hexdigest()
         if hmac.compare_digest(calc, got):
-            log.info(f"[AUTH] initData подошла по схеме '{name}'")
+            matched = True
             break
-    else:
-        log.warning(f"[AUTH] hash не совпал ни по одной схеме: ключи={sorted(pairs)}, got={got[:12]}…")
+    if not matched:
+        if os.getenv("AUTH_DEBUG") == "1":      # только ключи, без персональных данных
+            log.warning(f"[AUTH] подпись не сошлась; ключи={[k for k, _ in body]}, hash={got[:12]}…")
         return None
-    ts = int(pairs.get("auth_date") or 0)
-    ts = ts / 1000 if ts > 1e11 else ts
+
+    d = dict(pairs)
+    ts = int(d.get("auth_date") or 0)
+    ts = ts / 1000 if ts > 1e11 else ts         # дока: секунды; подстрахуемся от мс
     if time.time() - ts > max_age:
-        log.warning("[AUTH] initData просрочена")
         return None
     try:
-        return int(json.loads(pairs["user"])["id"])
+        return int(json.loads(d.get("user") or "{}")["id"])
     except Exception:
         return None
 

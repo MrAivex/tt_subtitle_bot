@@ -64,35 +64,51 @@ def _parse_init_data(raw: str):
 
 
 def validate_init_data(raw: str, max_age: int = 24 * 3600):
-    """Возвращает user_id или None."""
+    """Возвращает user_id или None. Причины отказа пишутся при AUTH_DEBUG=1."""
+    dbg = os.getenv("AUTH_DEBUG") == "1"
     pairs = _parse_init_data(raw)
     if not pairs:
+        if dbg:
+            log.warning(f"[AUTH] initData пустая (len={len(raw or '')}) — открыто не из MAX?")
         return None
+
     hashes = [v for k, v in pairs if k == "hash"]
     if len(hashes) != 1:
+        if dbg:
+            log.warning(f"[AUTH] hash отсутствует или дублируется; ключи={[k for k, _ in pairs]}")
         return None
+
     got = hashes[0]
     body = sorted((k, v) for k, v in pairs if k != "hash")
     launch_params = "\n".join(f"{k}={v}" for k, v in body).encode()
 
-    for tok in _auth_tokens():
+    toks = _auth_tokens()
+    for i, tok in enumerate(toks):
         secret = hmac.new(b"WebAppData", tok.encode(), hashlib.sha256).digest()
         calc = hmac.new(secret, launch_params, hashlib.sha256).hexdigest()
         if hmac.compare_digest(calc, got):
+            if dbg:
+                log.info(f"[AUTH] OK, токен #{i} (…{tok[-4:]})")
             break
     else:
-        if os.getenv("AUTH_DEBUG") == "1":      # только ключи, без персональных данных
-            log.warning(f"[AUTH] подпись не сошлась; ключи={[k for k, _ in body]}, hash={got[:12]}…")
+        if dbg:
+            log.warning(f"[AUTH] подпись не сошлась ни с одним из {len(toks)} токенов; "
+                        f"ключи={[k for k, _ in body]}, hash={got[:12]}…, "
+                        f"хвосты токенов={[t[-4:] for t in toks]}")
         return None
 
     d = dict(pairs)
     ts = int(d.get("auth_date") or 0)
     ts = ts / 1000 if ts > 1e11 else ts
     if time.time() - ts > max_age:
+        if dbg:
+            log.warning(f"[AUTH] initData просрочена: auth_date={ts}")
         return None
     try:
         return int(json.loads(d.get("user") or "{}")["id"])
-    except Exception:
+    except Exception as e:
+        if dbg:
+            log.warning(f"[AUTH] не разобрал user: {type(e).__name__}")
         return None
 
 

@@ -17,7 +17,6 @@ from app import bot, engine, session_manager
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
 from utils import extract_video_attachment, download_video, format_moment_time, timed
 from config import MINIAPP_URL
-from config import MINIAPP_URL
 from keyboards import main_menu_kb
 
 logger = logging.getLogger(__name__)

@@ -139,8 +139,18 @@ async def _download_yandex_disk(url: str, output_path: str) -> str:
         async with session.get(href, headers=HEADERS) as resp:
             if resp.status != 200:
                 raise Exception(f"Яндекс.Диск: HTTP {resp.status}")
+            
+            size = 0
             with open(output_path, "wb") as f:
                 async for chunk in resp.content.iter_chunked(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_FILE_SIZE_BYTES:
+                        f.close()
+                        try:
+                            os.remove(output_path)
+                        except OSError:
+                            pass
+                        raise Exception("Файл больше 2.5 ГБ")
                     f.write(chunk)
     return output_path
 
@@ -206,8 +216,8 @@ def _ytdlp_audio_sync(url: str, stem: str) -> str:
 
 
 async def download_audio_only(url: str, out_wav: str) -> str:
-    """Быстро качает только звук и конвертит в WAV 16 kHz mono."""
     import subprocess
+    from app import engine          # импорт внутри функции — без циклов
     from utils import timed
 
     with timed("аудио: yt-dlp"):
@@ -215,7 +225,7 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     with timed("аудио: ffmpeg → wav"):
         await asyncio.to_thread(
             subprocess.run,
-            ["ffmpeg", "-y", "-i", raw, "-vn", "-ar", "16000", "-ac", "1", out_wav],
+            [engine.ffmpeg, "-y", "-i", raw, "-vn", "-ar", "16000", "-ac", "1", out_wav],
             check=True, capture_output=True, text=True,
         )
     if os.path.exists(raw):

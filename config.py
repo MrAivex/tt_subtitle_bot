@@ -7,7 +7,10 @@ load_dotenv()
 MAX_TOKEN = os.getenv("MAX_BOT_TOKEN")
 MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL")
 WEBHOOK_PATH = "/max-webhook"
-PORT = 8081
+PORT = int(os.getenv("PORT", "8081"))
+
+MINIAPP_URL = os.getenv("MINIAPP_URL", "https://subtitle-bot.ru/app/")
+PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", MINIAPP_URL)
 
 # Админы
 ADMIN_IDS = set()
@@ -34,9 +37,5 @@ DOWNLOAD_PROXY = os.getenv("DOWNLOAD_PROXY", "")
 PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")
 
 BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")
+  
 
-
-PORT = int(os.getenv("PORT", "8081"))
-
-MINIAPP_URL = os.getenv("MINIAPP_URL", "https://subtitle-bot.ru/app/")
-PAYMENT_RETURN_URL = os.getenv("PAYMENT_RETURN_URL", MINIAPP_URL)

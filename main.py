@@ -95,48 +95,43 @@ async def register_webhook():
 
 
 async def main():
-    if os.getenv("UPDATE_YTDLP", "1") != "0":
-        ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
-
-        
     await init_db_max()
-    warmup_task = asyncio.create_task(asyncio.to_thread(engine.warmup))
 
-    if os.getenv("REGISTER_WEBHOOK", "1") != "0":
-        await register_webhook()
-    else:
-        print("⚠️ REGISTER_WEBHOOK=0 — вебхук не регистрирую", flush=True)
-
-    # Планировщик
-    scheduler.add_job(
-        reset_all_daily_limits,
-        CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),
-        id="daily_reset",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        check_expired_subscriptions,
-        CronTrigger(hour=1, minute=0, timezone=MOSCOW_TZ),
-        id="check_expired",
-        replace_existing=True,
-    )
-    scheduler.start()
-
-    # Веб-сервер
+    # 1. Сначала HTTP-сервер: занятый порт виден сразу, без модели и без вебхука
     app = web.Application()
     register_miniapp(app)
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
     app.router.add_post("/yookassa-webhook", handle_yookassa_webhook)
     app.router.add_post("/yookassa-webhook-max", handle_yookassa_webhook)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    print(f"✅ MAX-бот запущен на порту {PORT}", flush=True)
 
-    print(f"✅ MAX-бот запущен на порту {PORT}")
-    while True:
-        await asyncio.sleep(3600)
+    # 2. Вебхук — только когда сервер реально слушает
+    if os.getenv("REGISTER_WEBHOOK", "1") != "0":
+        await register_webhook()
+    else:
+        print("⚠️ REGISTER_WEBHOOK=0 — вебхук не регистрирую", flush=True)
 
+    # 3. Фоновые задачи; ссылки держим, чтобы таски не собрал GC
+    tasks = []
+    if os.getenv("UPDATE_YTDLP", "1") != "0":
+        tasks.append(asyncio.create_task(update_ytdlp()))
+    tasks.append(asyncio.create_task(asyncio.to_thread(engine.warmup)))
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    scheduler.add_job(reset_all_daily_limits,
+                      CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),
+                      id="daily_reset", replace_existing=True)
+    scheduler.add_job(check_expired_subscriptions,
+                      CronTrigger(hour=1, minute=0, timezone=MOSCOW_TZ),
+                      id="check_expired", replace_existing=True)
+    scheduler.start()
+
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    finally:
+        await runner.cleanup()

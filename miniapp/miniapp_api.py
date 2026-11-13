@@ -124,24 +124,20 @@ def _prev_path(job_id: str, idx: int) -> str:
 
 @web.middleware
 async def _mw(request, handler):
+    dbg = os.getenv("AUTH_DEBUG") == "1"
+    raw = request.headers.get("X-Init-Data", "")
     try:
-        path = request.path
-        # Медиа (превью/скачивание): авторизация подписанным токеном ?t=
-        if path.startswith("/api/jobs/") and ("/preview/" in path or "/download/" in path):
-            jid = path.split("/")[3]
-            if hmac.compare_digest(request.query.get("t", ""), _media_token(jid)):
-                job = JOBS.get(jid)
-                if job:
-                    request["uid"] = job.user_id
-                    return await handler(request)
-            raise ApiError("Открой приложение из MAX", 401)
-
-        uid = validate_init_data(request.headers.get("X-Init-Data", ""))
+        uid = validate_init_data(raw)
+        if dbg:
+            log.warning(f"[REQ] {request.method} {request.path} "
+                        f"initData_len={len(raw)} uid={uid}")
         if not uid:
             raise ApiError("Открой приложение из MAX", 401)
         request["uid"] = uid
         return await handler(request)
     except ApiError as e:
+        if dbg:
+            log.warning(f"[REQ] {request.path} → {e.code}: {e.msg}")
         return web.json_response({"error": e.msg}, status=e.code)
     except web.HTTPException:
         raise

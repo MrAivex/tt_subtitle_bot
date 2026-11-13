@@ -135,3 +135,7 @@ async def main():
             await asyncio.sleep(3600)
     finally:
         await runner.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

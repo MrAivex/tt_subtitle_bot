@@ -3,7 +3,7 @@ import aiohttp
 import time
 import logging
 from contextlib import contextmanager
-
+import re
 
 _tlog = logging.getLogger("timing")
 
@@ -17,7 +17,18 @@ def timed(label: str):
     finally:
         _tlog.info(f"[TIME] {label}: {time.perf_counter() - t:.1f} сек")
 
+def clean_title(t, limit=60):
+    t = re.sub(r"[*_`\[\]()~>#|]", "", t or "")
+    t = re.sub(r"\s+", " ", t).strip(" -–—.")
+    return (t[:limit - 1].rstrip() + "…") if len(t) > limit else t
 
+
+def clip_caption(title, n, label=""):
+    t = clean_title(title)
+    head = f"✅ Клип «{t}» #{n}" if t else f"✅ Клип #{n}"
+    return head + (f"\n{label}" if label else "")
+
+    
 def extract_video_attachment(attachments: list):
     """Ищет видео среди вложений type=video и type=file (файл без сжатия)."""
     for att in attachments:

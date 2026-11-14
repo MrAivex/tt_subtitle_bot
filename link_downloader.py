@@ -33,6 +33,14 @@ HEADERS = {
 # Защита от повторных скачиваний одной ссылки одновременно
 _INFLIGHT: dict = {}
 
+# Названия роликов, которые узнали при скачивании звука (url -> title)
+TITLES: dict = {}
+
+
+def get_title(url: str) -> str:
+    """Название ролика/стрима, если yt-dlp его узнал (для подписи клипов)."""
+    return TITLES.get(url, "")
+
 
 def extract_url(text: str):
     m = URL_RE.search(text or "")
@@ -139,18 +147,8 @@ async def _download_yandex_disk(url: str, output_path: str) -> str:
         async with session.get(href, headers=HEADERS) as resp:
             if resp.status != 200:
                 raise Exception(f"Яндекс.Диск: HTTP {resp.status}")
-            
-            size = 0
             with open(output_path, "wb") as f:
                 async for chunk in resp.content.iter_chunked(1024 * 1024):
-                    size += len(chunk)
-                    if size > MAX_FILE_SIZE_BYTES:
-                        f.close()
-                        try:
-                            os.remove(output_path)
-                        except OSError:
-                            pass
-                        raise Exception("Файл больше 2.5 ГБ")
                     f.write(chunk)
     return output_path
 
@@ -212,12 +210,15 @@ def _ytdlp_audio_sync(url: str, stem: str) -> str:
         logger.info(f"[LINK] Аудио через прокси: {url}")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
+        if len(TITLES) > 500:
+            TITLES.clear()
+        TITLES[url] = (info.get("title") or "").strip()
         return ydl.prepare_filename(info)
 
 
 async def download_audio_only(url: str, out_wav: str) -> str:
+    """Быстро качает только звук и конвертит в WAV 16 kHz mono."""
     import subprocess
-    from app import engine          # импорт внутри функции — без циклов
     from utils import timed
 
     with timed("аудио: yt-dlp"):
@@ -225,7 +226,7 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     with timed("аудио: ffmpeg → wav"):
         await asyncio.to_thread(
             subprocess.run,
-            [engine.ffmpeg, "-y", "-i", raw, "-vn", "-ar", "16000", "-ac", "1", out_wav],
+            ["ffmpeg", "-y", "-i", raw, "-vn", "-ar", "16000", "-ac", "1", out_wav],
             check=True, capture_output=True, text=True,
         )
     if os.path.exists(raw):
@@ -233,14 +234,13 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     return out_wav
 
 
-def _ytdlp_section_sync(url: str, start: float, end: float, stem: str,
-                        max_height: int = 1080) -> str:
+def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_height: int = 1080) -> str:
     import yt_dlp
     from yt_dlp.utils import download_range_func
+    h = int(max_height)
     opts = {
         "outtmpl": stem + ".%(ext)s",
-        "format": (f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]/"
-                   f"bv*[height<={max_height}]+ba/b"),
+        "format": f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/bv*[height<={h}]+ba/b[height<={h}]/b",
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
@@ -262,6 +262,6 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str,
 
 async def download_section(url: str, start: float, end: float, out_path: str,
                            max_height: int = 1080) -> str:
-    """Качает из интернета ТОЛЬКО фрагмент видео (для ссылок)."""
+    """Качает из интернета ТОЛЬКО фрагмент видео (для ссылок). max_height — потолок качества (превью: 360)."""
     stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
     return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem, max_height)

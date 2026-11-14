@@ -6,85 +6,152 @@
 <title>Хайлайты</title>
 <script src="https://st.max.ru/js/max-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#eef0f6;--card:#fff;--ink:#12142a;--mute:#6a6f8c;--line:#d9dcea;--acc:#4b3df2;--acc-ink:#fff;--sel:#ffb020;
---f:'Onest',system-ui,sans-serif;--h:'Unbounded','Onest',system-ui,sans-serif}
-@media(prefers-color-scheme:dark){:root{--bg:#10122a;--card:#1a1d3a;--ink:#eceefc;--mute:#9aa0c4;--line:#2c3057;--acc:#7a6dff}}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--f)}
-body{padding:env(safe-area-inset-top,0) 16px calc(76px + env(safe-area-inset-bottom,0))}
-body.hasact{padding-bottom:calc(150px + env(safe-area-inset-bottom,0))}
-main{max-width:520px;margin:0 auto;padding-top:20px}
-h1{font:700 21px/1.2 var(--h);margin:0 0 8px}
-.sub{color:var(--mute);margin:0 0 14px}
-input[type=url],input[type=email]{width:100%;padding:14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;margin-bottom:10px}
-button,.file{display:block;width:100%;padding:14px;border:0;border-radius:12px;font:600 16px var(--f);cursor:pointer;text-align:center;margin-top:10px;color:var(--ink);background:var(--card);border:1.5px solid var(--line)}
-button.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
-button:disabled{opacity:.45;cursor:default}
-:focus-visible{outline:3px solid var(--sel);outline-offset:2px}
-.or{text-align:center;color:var(--mute);margin:16px 0 6px}
-.bar{height:8px;background:var(--line);border-radius:8px;overflow:hidden;margin:16px 0}
-.bar i{display:block;height:100%;background:var(--acc);transition:width .3s}
-.bar i.ind{width:35%!important;animation:sl 1.2s ease-in-out infinite alternate}
+:root{
+  --bg:#fff3f8;--dot:#ffd0e4;--card:#fff;--ink:#2a1f45;--mute:#7a6c9a;--line:#2a1f45;--sh:#2a1f45;
+  --pink:#ff5fa2;--lav:#8b7bff;--sun:#ffd23f;--hl:#fff0a8;
+  --k-fight:#ff5a6e;--k-funny:#ffd23f;--k-shock:#9b87ff;--k-win:#ffa94d;--k-absurd:#3ddc97;--k-hype:#ff8fc8;
+  --f:'Nunito',system-ui,sans-serif;--h:'Rubik','Nunito',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1430;--dot:#2c2250;--card:#2a2147;--ink:#f6edff;--mute:#b6a9d9;--line:#8f80ee;--sh:#0a0716;--hl:#5b3d8f}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;color:var(--ink);font:600 16px/1.45 var(--f)}
+body{background:var(--bg);background-image:radial-gradient(var(--dot) 1.3px,transparent 1.7px);background-size:15px 15px;
+  min-height:100vh;padding:env(safe-area-inset-top,0) 16px calc(104px + env(safe-area-inset-bottom,0))}
+body.hasact{padding-bottom:calc(176px + env(safe-area-inset-bottom,0))}
+main{position:relative;z-index:1;max-width:520px;margin:0 auto;padding-top:18px}
+
+/* декор: мерцающие искорки */
+.sp{position:fixed;z-index:0;pointer-events:none;color:var(--pink);font-size:18px;opacity:.55;animation:tw 3.2s ease-in-out infinite}
+.sp:nth-of-type(1){top:9%;left:6%}.sp:nth-of-type(2){top:22%;right:7%;color:var(--lav);animation-delay:.8s}
+.sp:nth-of-type(3){top:46%;left:3%;color:var(--sun);animation-delay:1.6s}.sp:nth-of-type(4){top:63%;right:4%;animation-delay:2.2s}
+.sp:nth-of-type(5){top:80%;left:8%;color:var(--lav);animation-delay:1.1s}
+@keyframes tw{0%,100%{transform:scale(.7) rotate(0);opacity:.2}50%{transform:scale(1.2) rotate(20deg);opacity:.75}}
+
+/* маскот + реплика */
+.hero{display:flex;gap:14px;align-items:center;margin:0 0 16px}
+.face{position:relative;flex:none;min-width:96px;padding:18px 8px;text-align:center;white-space:nowrap;font:800 17px/1 var(--h);
+  background:var(--card);border:3px solid var(--line);border-radius:26px;box-shadow:4px 4px 0 var(--sh);transform:rotate(-3deg)}
+.face::before{content:"";position:absolute;inset:-14px;z-index:-1;border-radius:50%;opacity:.22;
+  background:repeating-conic-gradient(var(--pink) 0 5deg,transparent 5deg 10deg);
+  -webkit-mask:radial-gradient(circle,transparent 38%,#000 40%,#000 62%,transparent 70%);mask:radial-gradient(circle,transparent 38%,#000 40%,#000 62%,transparent 70%)}
+.bubble{position:relative;flex:1;padding:11px 14px;font-size:14.5px;background:var(--card);border:3px solid var(--line);border-radius:20px;box-shadow:4px 4px 0 var(--sh)}
+.bubble::before{content:"";position:absolute;left:-10px;top:50%;width:14px;height:14px;margin-top:-7px;background:var(--card);
+  border-left:3px solid var(--line);border-bottom:3px solid var(--line);transform:rotate(45deg)}
+
+h1{font:900 24px/1.15 var(--h);margin:0 0 6px;letter-spacing:-.2px}
+h1 .hl{background:linear-gradient(transparent 58%,var(--hl) 58%);padding:0 3px}
+.sub{color:var(--mute);margin:0 0 16px;font-size:15px}
+.sub b{color:var(--pink);font-family:var(--h)}
+.status{font:800 18px/1.2 var(--h);margin:4px 0 0;text-align:center}
+.pct{margin:6px 0 0;text-align:center;color:var(--mute);font-weight:800}
+.sfx{font:900 40px/1 var(--h);text-align:center;color:var(--sun);transform:rotate(-4deg);margin:6px 0 10px;
+  -webkit-text-stroke:7px var(--ink);paint-order:stroke fill;text-shadow:4px 4px 0 var(--pink);animation:pop 1.1s ease-in-out infinite alternate}
+@media(prefers-color-scheme:dark){.sfx{-webkit-text-stroke:7px #0a0716}}
+@keyframes pop{to{transform:rotate(3deg) scale(1.06)}}
+.name{display:inline-block;max-width:100%;margin:0 0 14px;padding:6px 12px;background:var(--hl);border:2.5px solid var(--line);border-radius:12px;
+  font-size:13.5px;transform:rotate(-1deg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.name[hidden]{display:none}
+
+input[type=url],input[type=email]{width:100%;padding:14px 16px;border:3px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);
+  font:700 16px var(--f);margin-bottom:12px;box-shadow:3px 3px 0 var(--sh);outline:0}
+input::placeholder{color:var(--mute);font-weight:600}
+input[type=url]:focus,input[type=email]:focus{border-color:var(--pink);box-shadow:3px 3px 0 var(--pink)}
+button,.file{display:block;width:100%;padding:13px 16px;border:3px solid var(--line);border-radius:999px;font:800 16px var(--h);cursor:pointer;
+  text-align:center;margin-top:12px;color:var(--ink);background:var(--card);box-shadow:0 5px 0 var(--sh);transition:transform .08s,box-shadow .08s}
+button:active,.file:active{transform:translateY(4px);box-shadow:0 1px 0 var(--sh)}
+button.pri{background:var(--pink);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+button:disabled{opacity:.5;box-shadow:none;transform:translateY(4px);cursor:default}
+:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+.file{border-style:dashed;border-color:var(--lav);box-shadow:none;background:transparent;color:var(--lav)}
+.file:active{transform:scale(.98);box-shadow:none}
+.or{text-align:center;color:var(--mute);margin:18px 0 4px;font-weight:800}
+.or::before{content:"✦ ";color:var(--pink)}.or::after{content:" ✦";color:var(--pink)}
+
+.bar{height:22px;background:var(--card);border:3px solid var(--line);border-radius:999px;overflow:hidden;margin:16px 0 8px;box-shadow:3px 3px 0 var(--sh)}
+.bar i{display:block;height:100%;border-radius:999px;transition:width .3s;
+  background:repeating-linear-gradient(-45deg,var(--pink) 0 10px,#ff8cc0 10px 20px);background-size:28px 28px;animation:stripes .8s linear infinite}
+@keyframes stripes{to{background-position:28px 0}}
+.bar i.ind{width:35%!important;animation:stripes .8s linear infinite,sl 1.2s ease-in-out infinite alternate}
 @keyframes sl{to{margin-left:65%}}
-.opts{display:flex;gap:8px;margin:14px 0 4px;flex-wrap:wrap}
-.opts button{margin:0;padding:10px;flex:1;font-size:14px}
-.opts button.on{border-color:var(--acc);color:var(--acc)}
-.card{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
-.card p{margin:0 0 4px;color:var(--mute)}
-nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1.5px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom,0));z-index:6}
-nav button{margin:0 4px;border:0;background:none;padding:10px}
-nav button.on{color:var(--acc)}
-#toast{position:fixed;left:16px;right:16px;bottom:calc(160px + env(safe-area-inset-bottom,0));background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:12px;display:none;z-index:10}
-.err{color:#d6334a}
-.spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:6px}
+
+.opts{display:flex;gap:10px;margin:16px 0 4px;flex-wrap:wrap}
+.opts button{margin:0;padding:11px 8px;flex:1 1 40%;font-size:14px;box-shadow:0 4px 0 var(--sh)}
+.opts button.on{background:var(--lav);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+.card{background:var(--card);border:3px solid var(--line);border-radius:22px;padding:16px;margin-bottom:16px;box-shadow:4px 4px 0 var(--sh)}
+.card b{font:900 17px var(--h)}.card p{margin:4px 0 0;color:var(--mute);font-weight:700}
+.card.sub-card b::before{content:"✦ ";color:var(--pink)}
+.err{color:#e23a63}
+.spin{width:16px;height:16px;border:3px solid var(--line);border-top-color:var(--pink);border-radius:50%;animation:rot .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:6px}
 @keyframes rot{to{transform:rotate(360deg)}}
+
+nav{position:fixed;z-index:6;left:16px;right:16px;bottom:calc(12px + env(safe-area-inset-bottom,0));max-width:488px;margin:0 auto;display:flex;gap:6px;
+  background:var(--card);border:3px solid var(--line);border-radius:999px;padding:6px;box-shadow:0 5px 0 var(--sh)}
+nav button{position:relative;margin:0;border:0;box-shadow:none;background:none;padding:10px 8px;display:flex;justify-content:center;gap:8px;align-items:center;flex:1;transition:background .15s}
+nav button:active{transform:scale(.96);box-shadow:none}
+nav button.on{background:var(--pink);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.3)}
+nav button.busy::after{content:"✦";position:absolute;top:-2px;right:14px;color:var(--sun);font-size:18px;-webkit-text-stroke:1px var(--ink);animation:tw 1.2s ease-in-out infinite}
+#toast{position:fixed;z-index:10;left:16px;right:16px;max-width:488px;margin:0 auto;bottom:calc(164px + env(safe-area-inset-bottom,0));background:var(--card);color:var(--ink);
+  padding:12px 16px;border:3px solid var(--line);border-radius:18px;box-shadow:4px 4px 0 var(--pink);display:none;font-weight:800}
+
 /* ---------- плеер ---------- */
-.player{position:relative;border-radius:14px;overflow:hidden;background:#000;border:1.5px solid var(--line)}
+.player{position:relative;border-radius:22px;overflow:hidden;background:#000;border:3px solid var(--line);box-shadow:4px 4px 0 var(--sh)}
 .player video{display:block;width:100%;aspect-ratio:16/9;background:#000}
-.center{position:absolute;left:0;right:0;top:0;bottom:0;margin:auto;width:76px;height:76px;border-radius:50%;
-  background:rgba(0,0,0,.55);border:0;color:#fff;font-size:30px;padding:0 0 0 6px;display:flex;align-items:center;justify-content:center}
-.roundtr{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.5);
-  border:0;color:#fff;font-size:18px;padding:0;margin:0}
-.ptag{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;padding:4px 9px;border-radius:8px}
-.pload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.6);color:#fff;font-size:14px}
+.center{position:absolute;left:0;right:0;top:0;bottom:0;margin:auto;width:72px;height:72px;border-radius:50%;
+  background:var(--pink);border:3px solid #2a1f45;color:#fff;font-size:28px;padding:0 0 0 6px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #2a1f45}
+.roundtr{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:50%;background:#fff;
+  border:3px solid #2a1f45;color:#2a1f45;font-size:17px;padding:0;margin:0;box-shadow:0 3px 0 #2a1f45;display:flex;align-items:center;justify-content:center}
+.ptag{position:absolute;top:10px;left:10px;background:var(--sun);color:#2a1f45;font:900 12px var(--h);padding:4px 10px;border-radius:999px;border:2.5px solid #2a1f45}
+.pload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(26,20,48,.72);color:#fff;font-size:14px;font-weight:800}
 .pload[hidden]{display:none}
 .pload .spin{border-color:rgba(255,255,255,.4);border-top-color:#fff}
-.pbar{position:absolute;left:0;right:0;bottom:0;padding:6px 12px 10px;background:linear-gradient(transparent,rgba(0,0,0,.72))}
-.ptime{color:#fff;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;margin:0 2px 2px 0}
+.pbar{position:absolute;left:0;right:0;bottom:0;padding:6px 12px 10px;background:linear-gradient(transparent,rgba(26,20,48,.8))}
+.ptime{color:#fff;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;margin:0 2px 2px 0;font-weight:800}
 .track{position:relative;height:24px;cursor:pointer;touch-action:none}
-.track .line{position:absolute;left:0;right:0;top:10px;height:4px;background:rgba(255,255,255,.35);border-radius:4px}
-.track .fill{position:absolute;left:0;top:10px;height:4px;background:var(--sel);border-radius:4px;width:0}
-.track .knob{position:absolute;top:5px;left:0;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--sel);box-shadow:0 0 0 3px rgba(0,0,0,.3)}
+.track .line{position:absolute;left:0;right:0;top:9px;height:6px;background:rgba(255,255,255,.4);border-radius:6px}
+.track .fill{position:absolute;left:0;top:9px;height:6px;background:var(--pink);border-radius:6px;width:0}
+.track .knob{position:absolute;top:4px;left:0;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--sun);border:2.5px solid #2a1f45}
+.meta{margin:14px 2px 0;font-size:14.5px}
+.meta b{font:900 15px var(--h)}.meta small{display:block;color:var(--mute);font-weight:700;margin-top:2px}
+
 /* ---------- галерея ---------- */
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
-.tile{position:relative;aspect-ratio:16/10;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--card);cursor:pointer}
-.tile.cur{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
-.tile.sel{border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.tile{position:relative;aspect-ratio:16/10;border-radius:16px;overflow:hidden;border:3px solid var(--line);background:var(--card);cursor:pointer;box-shadow:3px 3px 0 var(--sh)}
+.tile.cur{border-color:var(--pink);box-shadow:3px 3px 0 var(--pink)}
+.tile.sel{outline:3px solid var(--sun);outline-offset:1px}
 .tile img{width:100%;height:100%;object-fit:cover;display:block}
 .tile .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;
-  background:linear-gradient(110deg,var(--card) 30%,var(--bg) 50%,var(--card) 70%);background-size:220% 100%;animation:shim 1.4s infinite}
+  background:linear-gradient(110deg,var(--card) 30%,var(--dot) 50%,var(--card) 70%);background-size:220% 100%;animation:shim 1.4s infinite}
 @keyframes shim{from{background-position:120% 0}to{background-position:-120% 0}}
-.chk{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);
-  display:flex;align-items:center;justify-content:center;color:transparent;font-size:14px;font-weight:700;padding:0;margin:0}
-.chk.on{background:var(--acc);border-color:var(--acc);color:#fff}
-.dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;font-size:11px;padding:2px 6px;border-radius:6px;font-variant-numeric:tabular-nums}
-.rdy{position:absolute;left:6px;bottom:6px;width:26px;height:26px;border-radius:8px;background:var(--acc);color:#fff;border:0;font-size:14px;padding:0;margin:0}
-.pend{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
-.pend .spin{border-color:rgba(255,255,255,.4);border-top-color:#fff;margin:0}
+[data-k=fight]{--c:var(--k-fight)}[data-k=funny]{--c:var(--k-funny)}[data-k=shock]{--c:var(--k-shock)}
+[data-k=win]{--c:var(--k-win)}[data-k=absurd]{--c:var(--k-absurd)}[data-k=hype]{--c:var(--k-hype)}
+.no{position:absolute;top:6px;left:6px;max-width:calc(100% - 44px);background:var(--c,var(--lav));color:#2a1f45;border:2.5px solid #2a1f45;border-radius:999px;
+  padding:0 7px;font:900 12px/20px var(--h);white-space:nowrap;overflow:hidden}
+.chk{position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;border:2.5px solid #2a1f45;background:rgba(255,255,255,.85);
+  display:flex;align-items:center;justify-content:center;color:transparent;font-size:14px;font-weight:700;padding:0;margin:0;box-shadow:none}
+.chk:active{transform:scale(.9);box-shadow:none}
+.chk.on{background:var(--pink);color:#fff}
+.dur{position:absolute;right:6px;bottom:6px;background:#fff;color:#2a1f45;border:2px solid #2a1f45;font:800 11px var(--h);padding:1px 7px;border-radius:999px;font-variant-numeric:tabular-nums}
+.rdy{position:absolute;left:6px;bottom:6px;width:28px;height:28px;border-radius:50%;background:var(--pink);color:#fff;border:2.5px solid #2a1f45;font-size:13px;padding:0;margin:0;box-shadow:none}
+.rdy:active{transform:scale(.9);box-shadow:none}
+.pend{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.55)}
+.pend .spin{margin:0}
+
 /* ---------- нижняя кнопка ---------- */
-#actbar{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom,0));z-index:5}
+#actbar{position:fixed;left:16px;right:16px;max-width:488px;margin:0 auto;bottom:calc(84px + env(safe-area-inset-bottom,0));z-index:5}
 #actbar[hidden]{display:none}
-#actbar .pri{margin:0;box-shadow:0 8px 24px rgba(0,0,0,.18)}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#actbar .pri{margin:0}
+#actbar .pri:disabled{opacity:1;background:#c9a9c0;transform:none;box-shadow:0 5px 0 var(--sh)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.bar i.ind{margin-left:30%}}
 </style>
 </head>
 <body>
+<span class="sp">✦</span><span class="sp">♡</span><span class="sp">✧</span><span class="sp">✦</span><span class="sp">♡</span>
 <main id="v"></main>
 <div id="actbar" hidden><button class="pri" id="big"></button></div>
 <div id="toast" role="status"></div>
-<nav><button data-t="home" class="on">Видео</button><button data-t="profile">Профиль</button></nav>
+<nav><button data-t="home" class="on">🎬 Видео</button><button data-t="profile">💖 Профиль</button></nav>
 <script>
 const $=s=>document.querySelector(s),W=window.WebApp;
 try{W&&W.ready()}catch(e){}
@@ -98,6 +165,8 @@ const fmt=t=>{t=Math.max(0,Math.round(t||0));const h=Math.floor(t/3600),m=Math.f
   return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')};
 const mediaUrl=(kind,idx)=>`/api/jobs/${S.job.id}/${kind}/${idx}?t=${S.job.media_token||''}`;
 const renders=()=>(S.job&&S.job.renders)||{};
+// как клип подписан: «Клип «Название стрима» #3» (номер = номер момента в списке)
+const clipName=i=>S.job&&S.job.title?`Клип «${S.job.title}» #${i+1}`:`Клип #${i+1}`;
 const busy=()=>{const j=S.job;if(!j)return false;
   return j.status==='scanning'||j.previews_status==='pending'||Object.values(renders()).some(r=>r.status==='pending')};
 async function api(p,m='GET',b){
@@ -109,6 +178,24 @@ async function api(p,m='GET',b){
 let tt;function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(tt);tt=setTimeout(()=>e.style.display='none',3500)}
 const tab=t=>{S.tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t))};
 
+// ---------- маскот: мордочка и реплика зависят от настроения ----------
+const FACES={
+  idle:['(｡•̀ᴗ-)✧','(๑˃ᴗ˂)ﻭ','(≧◡≦)'],
+  work:['(ง •̀_•́)ง','( ˘▽˘)っ♨','٩(•̤̀ᵕ•̤́๑)'],
+  blush:['(⁄ ⁄>⁄ ▽ ⁄<⁄ ⁄)','(*/ω＼*)','(〃ω〃)'],
+  err:['(╥﹏╥)','(；ω；)']};
+const LINES={
+  idle:['Ну что, принёс мне что-нибудь погорячее? Кидай ссылку, не стесняйся~','Покажи свой стрим, а я найду в нём самое интересное!','Давай-давай, не томи! Ссылка или файл — что у тебя?'],
+  scan:['Так-так, что тут у нас... Только не подглядывай, я сосредоточена!','Ой-ой, сколько всего! Ищу самые жаркие моменты~','Тсс! Я слушаю дорожку. Не отвлекай меня, ладно?'],
+  up:['Ммм, файл грузится... Не закрывай приложение, а то всё сорвётся!','Держи крепче, не отпускай! Загрузка идёт~'],
+  err:['Ай! Что-то пошло не так... Это не я, честно!','Упс, сломалось. Давай попробуем ещё разок?'],
+  profile:['Тут твои тарифы и всякие скучные взрослые штуки (¬‿¬)']};
+const SFX={scan:'ドキドキ',up:'ぐいっ!',err:'ガーン'};
+const SAY={};
+const pick=(k,a)=>SAY[k]||(SAY[k]=a[Math.floor(Math.random()*a.length)]);
+const resetSay=()=>Object.keys(SAY).forEach(k=>delete SAY[k]);
+const hero=(mood,key)=>`<div class="hero"><div class="face">${esc(pick('f'+mood+key,FACES[mood]))}</div><div class="bubble">${esc(pick('l'+key,LINES[key]))}</div></div>`;
+
 /* ---------- стартовый экран ---------- */
 async function home(){
   tab('home');
@@ -116,18 +203,23 @@ async function home(){
   try{S.me=await api('/me')}catch(e){return fail(e.message)}
   if(S.tab!=='home')return;
   const m=S.me,left=m.is_admin||m.limit>1000?'без ограничений':Math.max(0,m.limit-m.used);
-  $('#v').innerHTML=`<h1>Нарезка хайлайтов</h1>
-  <p class="sub">Вставь ссылку на стрим или загрузи файл. Видео на сегодня: <b>${left}</b></p>
+  $('#v').innerHTML=`${hero('idle','idle')}
+  <h1>Нарезка <span class="hl">хайлайтов</span></h1>
+  <p class="sub">Видео на сегодня: <b>${left}</b></p>
   <input id="url" type="url" placeholder="Ссылка на YouTube, Twitch, TikTok, Диск" autocomplete="off">
-  <button class="pri" data-a="scan">Найти моменты</button>
+  <button class="pri" data-a="scan">Найти моменты ✦</button>
   <div class="or">или</div>
   <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>`;
 }
-function busyView(t,p){
-  $('#v').innerHTML=`<h1>${esc(t)}</h1><div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>`;
+function busyView(t,p,kind){
+  kind=kind||'scan';
+  $('#v').innerHTML=`<div class="sfx">${SFX[kind]}</div>${hero('idle',kind)}
+  <p class="status">${esc(t)}</p>
+  <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
+  ${p==null?'':`<p class="pct">${p}%</p>`}`;
 }
 function fail(t){
-  $('#v').innerHTML=`<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
+  $('#v').innerHTML=`<div class="sfx">${SFX.err}</div>${hero('err','err')}<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
 }
 
 /* ---------- плеер ---------- */
@@ -148,7 +240,7 @@ function buildPlayerBox(){
         <div class="track" id="track"><i class="line"></i><i class="fill" id="fill"></i><b class="knob" id="knob"></b></div>
       </div>
     </div>
-    <p class="sub" id="curmeta" style="margin:8px 2px 0"></p>`;
+    <div class="meta" id="curmeta"></div>`;
     bindPlayer();
   }
   if(P.cur===-1){
@@ -205,7 +297,7 @@ function loadClip(idx){
     if(t>0&&v.duration)v.currentTime=Math.min(t,Math.max(0,v.duration-0.3));
     pui()};
   const m=j.moments[idx];
-  $('#curmeta').innerHTML=`<b>Клип ${idx+1}</b> · ${esc(m.label||'Яркий момент')}${m.snippet?` · «${esc(m.snippet)}»`:''}`;
+  $('#curmeta').innerHTML=`<b>${esc(clipName(idx))}</b><small>${esc(m.label||'Яркий момент')}</small>${m.snippet?`<small>«${esc(m.snippet)}»</small>`:''}`;
   $('#ptag').textContent=`${idx+1} / ${j.moments.length}`;
   $('#bigplay').style.display='flex';
   pui();
@@ -232,9 +324,10 @@ function updateGallery(){
     }
     else if(p&&p.status==='error')inner=`<span class="ph" style="animation:none">✕</span>`;
     else inner=`<span class="ph"></span>`;
-    return `<div class="tile ${S.sel.has(i)?'sel':''} ${P.cur===i?'cur':''}" data-i="${i}">
+    return `<div class="tile ${S.sel.has(i)?'sel':''} ${P.cur===i?'cur':''}" data-i="${i}" data-k="${m.kind||'hype'}">
       ${inner}
-      <button class="chk ${S.sel.has(i)?'on':''}" data-chk="${i}" aria-label="Выбрать">✓</button>
+      <span class="no">${i+1} ${esc(m.emoji||'')}</span>
+      <button class="chk ${S.sel.has(i)?'on':''}" data-chk="${i}" aria-label="Выбрать">♥</button>
       <span class="dur">${fmt(m.end-m.start)}</span>
       ${r&&r.status==='ready'?`<button class="rdy" data-dl="${i}" aria-label="Скачать">⬇</button>`:''}
       ${r&&r.status==='pending'?`<span class="pend"><span class="spin"></span></span>`:''}
@@ -307,19 +400,20 @@ function paint(){
   badge();
   if(S.tab!=='home')return;
   const j=S.job;
-  if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct);
+  if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct,'up');
   if(!j)return home();
-  if(j.status==='scanning')return busyView(j.progress||'Сканирую');
+  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan');
   if(j.status==='error')return fail(j.error);
   if(!$('#pbox')){
-    $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p>
+    $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>
       <div id="pbox"></div><div class="grid" id="grid"></div><div class="opts" id="opts"></div>`;
   }
   const ms=j.moments||[];
-  $('#mh').textContent=ms.length?`Найдено моментов: ${ms.length}`:'Ярких моментов нет';
+  $('#mh').innerHTML=ms.length?`Найдено <span class="hl">моментов: ${ms.length}</span>`:'Ярких моментов нет';
+  const tt=$('#tt');tt.hidden=!(ms.length&&j.title);if(j.title)tt.textContent='🎞 «'+j.title+'»';
     $('#ms').textContent = j.error || (
     j.previews_status==='pending' && j.progress ? j.progress :
-    ms.length ? 'Смотри превью, отмечай галочками нужные — большая кнопка внизу подготовит и скачает их.'
+    ms.length ? 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡'
               : 'Можно наложить субтитры на всё видео.');
   buildPlayerBox();
   updateGallery();
@@ -335,7 +429,7 @@ function updateOpts(){
     <button data-a="reset">Новое видео</button>`;
 }
 function badge(){
-  document.querySelector('nav [data-t=home]').textContent=(S.up||busy())?'Видео ⏳':'Видео';
+  document.querySelector('nav [data-t=home]').classList.toggle('busy',!!(S.up||busy()));
 }
 
 /* ---------- поллинг ---------- */
@@ -362,17 +456,18 @@ async function restore(){
   paint();
 }
 async function start(p,b){
-  try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();P.jobId=null;paint();poll()}
+  try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();P.jobId=null;resetSay();paint();poll()}
   catch(e){toast(e.message);if(e.status===409)restore()}
 }
 function upload(f){
-  S.up={pct:0};paint();
+  S.up={pct:0};resetSay();paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
   x.setRequestHeader('X-Init-Data',initData());
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
     S.up.pct=Math.round(e.loaded/e.total*100);
-    const bar=$('.bar i');if(bar)bar.style.width=S.up.pct+'%';
+    const bar=S.tab==='home'&&$('.bar i');if(bar)bar.style.width=S.up.pct+'%';
+    const pc=S.tab==='home'&&$('.pct');if(pc)pc.textContent=S.up.pct+'%';
   };
   x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch(e){}
     S.up=null;
@@ -394,15 +489,16 @@ async function profile(){
   let m;try{m=S.me=await api('/me')}catch(e){return fail(e.message)}
   if(S.tab!=='profile')return;
   const free=m.sub==='default';
-  $('#v').innerHTML=`<h1>Профиль</h1>
+  $('#v').innerHTML=`${hero('blush','profile')}
+  <h1><span class="hl">Профиль</span></h1>
   <div class="card"><b>${free?'Бесплатный тариф':'Подписка активна'}</b>
   <p>${m.limit>1000?'Без ограничений по видео':'Использовано сегодня: '+m.used+' из '+m.limit}</p>
   ${m.expiry?`<p>Действует до ${esc(m.expiry)}</p>`:''}</div>
   <div class="card"><b>Email для чека</b><br><br>
   <input id="email" type="email" value="${esc(m.email)}" placeholder="name@example.com">
   <button data-a="email">Сохранить email</button></div>
-  ${m.subs.map(s=>`<div class="card"><b>${esc(s.name)}, ${s.price} ₽</b><p>${esc(s.description)}</p>
-  <button class="pri" data-a="pay" data-id="${esc(s.id)}">Оформить</button></div>`).join('')}
+  ${m.subs.map(s=>`<div class="card sub-card"><b>${esc(s.name)}, ${s.price} ₽</b><p>${esc(s.description)}</p>
+  <button class="pri" data-a="pay" data-id="${esc(s.id)}">Оформить ♡</button></div>`).join('')}
   <div id="adm"></div>`;
   if(m.is_admin)try{const s=await api('/stats');
     $('#adm').innerHTML=`<div class="card"><b>Статистика</b><p>Пользователей: ${s.total}</p><p>С подпиской: ${s.paid}</p><p>С email: ${s.with_email}</p></div>`}catch(e){}
@@ -430,7 +526,7 @@ document.addEventListener('click',async e=>{
   else if(a==='fmt'){S.vert=!S.vert;updateOpts()}
   else if(a==='full')prep(-1);
   else if(a==='dlfull')downloadOne(-1);
-  else if(a==='reset'){S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
+  else if(a==='reset'){resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
     document.body.classList.remove('hasact');$('#actbar').hidden=true;home()}
   else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}
   else if(a==='pay'){try{const d=await api('/pay','POST',{sub_id:b.dataset.id});

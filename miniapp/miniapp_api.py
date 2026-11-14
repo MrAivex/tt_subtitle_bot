@@ -1,7 +1,7 @@
 """API мини-приложения MAX: превью клипов + скачивание без отправки в чат."""
-import asyncio, hashlib, hmac, json, logging, os, time, traceback, uuid
+import asyncio, hashlib, hmac, json, logging, os, re, time, traceback, uuid
 from dataclasses import dataclass, field
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from aiohttp import web
 
@@ -11,7 +11,8 @@ from config import (MAX_TOKEN, ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SE
 from database_max import async_session_max
 from services_max import (get_or_create_user, can_process_video, increment_video_counter,
                           set_user_email, get_users_stats)
-from link_downloader import detect_platform, download_audio_only, download_by_link, download_section
+from link_downloader import (detect_platform, download_audio_only, download_by_link,
+                             download_section, get_title)
 from payments import create_payment
 from subscriptions import SUBSCRIPTIONS
 
@@ -117,6 +118,27 @@ def _media_token(job_id: str) -> str:
     return hmac.new(SECRET, job_id.encode(), hashlib.sha256).hexdigest()[:32]
 
 
+_BAD_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _safe_name(s: str, limit: int = 60) -> str:
+    """Название для имени файла: без запрещённых символов, не длиннее limit."""
+    s = _BAD_NAME.sub(" ", s or "")
+    s = re.sub(r"\s+", " ", s).strip(" .-")
+    return s[:limit].rstrip(" .-")
+
+
+def _clip_name(title: str, n: int) -> str:
+    """«Клип Стрим держи дверь 3.mp4». n — номер момента в списке (как в приложении)."""
+    t = _safe_name(title)
+    return f"Клип {t} {n}.mp4" if t else f"clip_{n}.mp4"
+
+
+def _full_name(title: str) -> str:
+    t = _safe_name(title)
+    return f"{t} (субтитры).mp4" if t else "full_subtitled.mp4"
+
+
 def _prev_path(job_id: str, idx: int) -> str:
     """Единая точка правды для имени превью (используется везде)."""
     return f"downloads/prev_{job_id}_{idx}.mp4"
@@ -173,6 +195,7 @@ class Job:
     error: str = ""
     ts: float = field(default_factory=time.time)
     seen: bool = False
+    title: str = ""                  # название ролика — для подписи клипов
     charged: bool = False
     premium: bool = False
     previews: list = field(default_factory=list)
@@ -182,7 +205,7 @@ class Job:
     def public(self):
         d = {k: getattr(self, k) for k in
              ("id", "status", "progress", "done", "total", "error",
-              "duration", "moments", "previews", "previews_status")}
+              "duration", "moments", "previews", "previews_status", "title")}
         d["renders"] = {str(k): {kk: vv for kk, vv in v.items() if kk not in ("path", "extra")}
                         for k, v in self.renders.items()}
         d["media_token"] = _media_token(self.id)
@@ -267,8 +290,10 @@ async def _make_previews(job: Job):
                 prev = _prev_path(job.id, i)
                 try:
                     if job.source_url:
-                        await download_section(job.source_url, m["start"], m["end"],
-                                               prev, max_height=360)
+                        got = await download_section(job.source_url, m["start"], m["end"],
+                                                     prev, max_height=360)
+                        if got != prev and os.path.exists(got):
+                            os.replace(got, prev)
                         await asyncio.to_thread(engine.faststart, prev)
                     else:
                         await asyncio.to_thread(engine.make_preview, job.path,
@@ -293,6 +318,7 @@ async def _scan(job: Job, url: str = ""):
                 job.progress = "Качаю звук"
                 job.path = f"downloads/max_{job.user_id}_{job.id}.wav"
                 await download_audio_only(url, job.path)
+                job.title = get_title(url)
             job.progress = "Ищу громкие моменты"
             res = await asyncio.to_thread(
                 engine.scan_audio_wav if url else engine.scan_highlights,
@@ -335,7 +361,7 @@ async def _render_one(job: Job, idx: int, subs: bool, vertical: bool):
                 if r.get("srt_path"):
                     extra.append(r["srt_path"])
                 job.renders[idx] = {"status": "ready", "path": r["video_path"],
-                                    "name": "full_subtitled.mp4", "extra": extra}
+                                    "name": _full_name(job.title), "extra": extra}
             else:
                 m = job.moments[idx]
                 job.progress = f"Клип {idx + 1}"
@@ -360,7 +386,7 @@ async def _render_one(job: Job, idx: int, subs: bool, vertical: bool):
                     final = v
                     extra.append(clip)
                 job.renders[idx] = {"status": "ready", "path": final,
-                                    "name": f"clip_{idx + 1}.mp4", "extra": extra}
+                                    "name": _clip_name(job.title, idx + 1), "extra": extra}
             job.progress = ""
     except ApiError as e:
         _rm(*extra)
@@ -405,6 +431,7 @@ async def api_upload(request):
         JOBS.pop(job.id, None)
         raise ApiError("Нужен видеофайл: mp4, mov, avi, mkv или webm")
     job.path = f"downloads/max_{job.user_id}_{job.id}{os.path.splitext(name)[1]}"
+    job.title = os.path.splitext(getattr(field_, "filename", "") or "")[0]
     size = 0
     try:
         with open(job.path, "wb") as f:
@@ -476,8 +503,11 @@ async def api_download(request):
     r = job.renders.get(idx)
     if not r or r["status"] != "ready" or not os.path.exists(r.get("path", "")):
         raise ApiError("Файл ещё не готов", 404)
+    # ASCII-имя для старых клиентов + настоящее (кириллица) по RFC 5987
+    plain = "full_subtitled.mp4" if idx == -1 else f"clip_{idx + 1}.mp4"
+    disp = f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(r['name'])}"
     return web.FileResponse(r["path"], headers={
-        "Content-Disposition": f'attachment; filename="{r["name"]}"',
+        "Content-Disposition": disp,
         "Cache-Control": "no-store",
     })
 

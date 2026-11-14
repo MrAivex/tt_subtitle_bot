@@ -149,7 +149,7 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
                 final_path = vertical_path
             else:
                 final_path = clip_path
-            clips.append(final_path)
+            clips.append((idx, moment, final_path))
 
     except Exception as e:
         error_details = traceback.format_exc()

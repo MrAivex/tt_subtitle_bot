@@ -1,0 +1,37 @@
+# ----------------- ТЕСТ (каждая правка) ---------------------------
+
+# В VS Code на компе
+git checkout feature/previews
+git pull                                 # ← ДО правок
+
+# ...правишь файлы, добавляешь новое...
+
+# Когда готов пушить:
+git add -A
+git commit -m "text"
+git pull                                 # ← после коммита, перед пушем
+git push origin feature/previews
+git log --oneline -1                     # запомни хеш
+
+# На сервере (тестовый worktree)
+cd /opt/subtitle-bot-test
+git pull
+git log --oneline -1                     # сверить с локальным
+systemctl restart max-bot-test
+journalctl -u max-bot-test -f
+
+
+# ----------------- ПРОД (только после теста) ---------------------------
+
+# В VS Code на компе — БЕЗ add/commit!
+git checkout main
+git pull origin main                          # уже был в гайде, теперь он критичен
+git merge --no-ff feature/previews -m "text"
+git push origin main                          # если rejected → git pull → git push
+
+# На сервере (прод)
+cd /opt/tt-bot
+git branch --show-current                     # main
+git pull
+systemctl restart max-bot
+journalctl -u max-bot -f

@@ -18,6 +18,23 @@ from highlight_analyzer import analyze_audio
 _HALLUCINATION_RE = re.compile(
     r"субтитр|корректор|dimatorzok|продолжение следует", re.IGNORECASE)
 
+# ======================= БЛОК 1 =======================
+# ---- анимация субтитров: слова вылетают снизу вверх ----
+ANIM_SEC = 0.32       # сколько слово «вылетает»
+RISE_K = 0.55         # стартует ниже на столько размеров шрифта
+EASE_STEPS = 5        # на сколько линейных отрезков режется кривая замедления
+FADE_K = 1.7          # во сколько раз проявление быстрее движения
+LINE_TAIL = 0.25      # сколько строка висит после последнего слова
+LINE_FADE_OUT = 0.15  # плавное исчезновение строки
+
+
+def _ease_out(p: float) -> float:
+    return 1 - (1 - p) ** 2
+
+
+def _ass_alpha(v: float) -> str:
+    return f"&H{max(0, min(255, int(round(v)))):02X}&"
+
 
 class VideoEngine:
     def __init__(self, device: str = "cpu"):
@@ -317,6 +334,8 @@ class VideoEngine:
         margin_v = max(40, round(video_h * 0.07))    # отступ снизу
         wm_fs = max(14, round(fs * 0.78))
         b = -1 if bold else 0
+        cx, cy = video_w / 2, video_h - margin_v     # якорь строки: низ по центру
+        rise = fs * RISE_K
 
         out = [
             "[Script Info]",
@@ -344,29 +363,78 @@ class VideoEngine:
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
         ]
 
-        for line in lines:
-            ws = line["words"]
-            words = [self._ass_escape(w["word"]) for w in ws]
-            n = len(ws)
+        # Кривая вылета: узлы по времени -> смещение вниз и прозрачность
+        nodes = [k / EASE_STEPS for k in range(EASE_STEPS + 1)]
+        off = [rise * (1 - _ease_out(p)) for p in nodes]
+        alp = [255 * (1 - min(1.0, p * FADE_K)) for p in nodes]
 
-            # Текст строки — один раз на всё время строки
-            out.append(
-                f"Dialogue: 1,{self._ass_time(line['start'])},{self._ass_time(line['end'])},"
-                f"Text,,0,0,0,,{' '.join(words)}"
-            )
-
-            # Плашка — по одному событию на слово
-            for i, w in enumerate(ws):
-                nxt = ws[i + 1]["start"] if i + 1 < n else None
-                hl_end = w["end"] if nxt is None else min(nxt, max(w["end"] + 0.3, w["start"] + 0.05))
-                if hl_end - w["start"] < 0.01:
+        def fly(layer, style, t0, anim, t_stop, text_for):
+            """Анимация слова: EASE_STEPS коротких событий с \\move, режется по t_stop."""
+            for k in range(EASE_STEPS):
+                s = t0 + nodes[k] * anim
+                e = min(t0 + nodes[k + 1] * anim, t_stop)
+                if e - s < 0.005:
                     continue
-                parts = [f"{{\\3a&H{'00' if j == i else 'FF'}&}}{wd}" for j, wd in enumerate(words)]
-                box_text = "{\\3a&HFF&} ".join(parts)
-                out.append(
-                    f"Dialogue: 0,{self._ass_time(w['start'])},{self._ass_time(hl_end)},"
-                    f"Box,,0,0,0,,{box_text}"
-                )
+                move = f"{{\\an2\\move({cx:.1f},{cy + off[k]:.1f},{cx:.1f},{cy + off[k + 1]:.1f})}}"
+                out.append(f"Dialogue: {layer},{self._ass_time(s)},{self._ass_time(e)},{style},,0,0,0,,"
+                           f"{move}{text_for(alp[k], alp[k + 1])}")
+
+        for li, line in enumerate(lines):
+            ws = line["words"]
+            n = len(ws)
+            words = [self._ass_escape(w["word"]) for w in ws]
+
+            t = []                                   # моменты появления слов (не убывают)
+            for w in ws:
+                t.append(max(w["start"], t[-1] if t else 0.0))
+
+            # Строка не живёт дольше начала следующей, иначе строки наложатся друг на друга
+            hard_end = 1e9
+            if li + 1 < len(lines):
+                hard_end = max(line["end"], lines[li + 1]["words"][0]["start"])
+            # Последнему слову сокращаем полёт, если следующая строка начнётся скоро
+            an = [ANIM_SEC] * n
+            if hard_end < 1e8:
+                an[-1] = min(ANIM_SEC, max(0.12, hard_end - t[-1] - 0.02))
+            line_end = min(max(line["end"] + LINE_TAIL, t[-1] + an[-1] + 0.10), hard_end)
+
+            pos = f"{{\\an2\\pos({cx:.1f},{cy:.1f})}}"
+
+            for i in range(n):
+                # 1) текст: слово i вылетает (остальные слова невидимы, но держат раскладку строки)
+                def text_fly(a0, a1, i=i):
+                    return " ".join(
+                        (f"{{\\alpha{_ass_alpha(a0)}\\t(\\alpha{_ass_alpha(a1)})}}" if j == i
+                         else "{\\alpha&HFF&}") + wd
+                        for j, wd in enumerate(words))
+                fly(1, "Text", t[i], an[i], line_end, text_fly)
+
+                # 2) текст: слова 0..i стоят на месте
+                s0 = t[i] + an[i]
+                e0 = min(t[i + 1] + an[i + 1] if i + 1 < n else line_end, line_end)
+                if e0 - s0 >= 0.01:
+                    parts = [("{\\alpha&H00&}" if j <= i else "{\\alpha&HFF&}") + wd
+                             for j, wd in enumerate(words)]
+                    fad = f"{{\\fad(0,{int(LINE_FADE_OUT * 1000)})}}" if i == n - 1 else ""
+                    out.append(f"Dialogue: 1,{self._ass_time(s0)},{self._ass_time(e0)},Text,,0,0,0,,"
+                               f"{pos}{fad}{' '.join(parts)}")
+
+                # 3) плашка активного слова: летит вместе со словом, потом стоит до его конца
+                nxt = ws[i + 1]["start"] if i + 1 < n else None
+                hl_end = ws[i]["end"] if nxt is None else min(nxt, max(ws[i]["end"] + 0.3, ws[i]["start"] + 0.05))
+                hl_end = min(max(hl_end, t[i] + 0.05), line_end)
+
+                def box_fly(a0, a1, i=i):
+                    return " ".join(
+                        (f"{{\\3a{_ass_alpha(a0)}\\t(\\3a{_ass_alpha(a1)})}}" if j == i
+                         else "{\\3a&HFF&}") + wd
+                        for j, wd in enumerate(words))
+                fly(0, "Box", t[i], an[i], hl_end, box_fly)
+                if hl_end - s0 >= 0.01:
+                    parts = [("{\\3a&H00&}" if j == i else "{\\3a&HFF&}") + wd
+                             for j, wd in enumerate(words)]
+                    out.append(f"Dialogue: 0,{self._ass_time(s0)},{self._ass_time(hl_end)},Box,,0,0,0,,"
+                               f"{pos}{' '.join(parts)}")
 
         if show_watermark:
             out.append(

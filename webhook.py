@@ -10,7 +10,6 @@ from handlers.commands import (
     handle_start,
     handle_help,
     handle_stats,
-    handle_ask_email,
     handle_show_subscriptions,
 )
 from handlers.video import (

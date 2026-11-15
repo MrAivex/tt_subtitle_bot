@@ -3,7 +3,6 @@
 import asyncio
 from aiohttp import web
 
-from app import bot, session_manager
 from config import ADMIN_IDS
 from utils import extract_video_attachment
 from sources import extract_url, detect_platform
@@ -19,6 +18,7 @@ from handlers.video import (
     # handle_select_moments,
     handle_link_download,
 )
+from handlers.callbacks import handle_callback
 
 
 async def handle_max_webhook(request: web.Request):
@@ -56,40 +56,20 @@ async def handle_max_webhook(request: web.Request):
             if text.startswith("/stats"):
                 await handle_stats(chat_id, user_id, ADMIN_IDS)
                 return web.Response(text="OK")
-            if text.startswith("/email"):
-                await handle_ask_email(chat_id)
-                return web.Response(text="OK")
             if text.startswith("/pay"):
                 await handle_show_subscriptions(chat_id)
                 return web.Response(text="OK")
 
-            # Состояние пользователя
-            state = session_manager.get_state(user_id)
-
-            # --- Ссылка на видео (YouTube, Twitch, TikTok, диски) ---
             url = extract_url(text)
             if url and detect_platform(url):
-                if state and state.stage == "awaiting_moment_selection":
-                    session_manager.clear_state(user_id)
                 asyncio.create_task(handle_link_download(chat_id, user_id, url))
                 return web.Response(text="OK")
 
-            # --- Хайлайты: пользователь выбирает моменты ---
-            # if state and state.stage == "awaiting_moment_selection" and text:
-            #     asyncio.create_task(handle_select_moments(chat_id, user_id, text))
-            #     return web.Response(text="OK")
-
-            # --- Видеофайл ---
             att_info = extract_video_attachment(attachments)
             if attachments and not att_info:
                 print("[MAX] attachments:", attachments, flush=True)
-
             if att_info:
-                if state and state.stage == "awaiting_moment_selection":
-                    session_manager.clear_state(user_id)
                 asyncio.create_task(handle_video(chat_id, user_id, att_info))
-                return web.Response(text="OK")
-
             return web.Response(text="OK")
 
         # --- message_callback ---
@@ -103,7 +83,6 @@ async def handle_max_webhook(request: web.Request):
             if not chat_id:
                 return web.Response(text="OK")
 
-            from handlers.callbacks import handle_callback
             await handle_callback(chat_id, user_id, payload)
             return web.Response(text="OK")
 

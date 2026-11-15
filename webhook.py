@@ -6,7 +6,7 @@ from aiohttp import web
 from app import bot, session_manager
 from config import ADMIN_IDS
 from utils import extract_video_attachment
-from link_downloader import extract_url, detect_platform
+from sources import extract_url, detect_platform
 from handlers.commands import (
     handle_start,
     handle_help,
@@ -16,7 +16,7 @@ from handlers.commands import (
 )
 from handlers.video import (
     handle_video,
-    handle_select_moments,
+    # handle_select_moments,
     handle_link_download,
 )
 
@@ -75,9 +75,9 @@ async def handle_max_webhook(request: web.Request):
                 return web.Response(text="OK")
 
             # --- Хайлайты: пользователь выбирает моменты ---
-            if state and state.stage == "awaiting_moment_selection" and text:
-                asyncio.create_task(handle_select_moments(chat_id, user_id, text))
-                return web.Response(text="OK")
+            # if state and state.stage == "awaiting_moment_selection" and text:
+            #     asyncio.create_task(handle_select_moments(chat_id, user_id, text))
+            #     return web.Response(text="OK")
 
             # --- Видеофайл ---
             att_info = extract_video_attachment(attachments)

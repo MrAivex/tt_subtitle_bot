@@ -10,11 +10,10 @@ from apscheduler.triggers.cron import CronTrigger
 from database_max import init_db_max
 from services_max import reset_all_daily_limits, check_expired_subscriptions
 from config import MAX_WEBHOOK_URL, WEBHOOK_PATH, PORT, MOSCOW_TZ
-from app import bot, scheduler
-from app import engine
+from app import bot, scheduler, transcriber, ffmpeg, analyzer, renderer, downloader
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
-from miniapp.miniapp_api import register_miniapp
+from miniapp import register_miniapp
 
 
 # ============================================================
@@ -99,7 +98,7 @@ async def main():
 
     # 1. Сначала HTTP-сервер: занятый порт виден сразу, без модели и без вебхука
     app = web.Application()
-    register_miniapp(app)
+    register_miniapp(app, ffmpeg=ffmpeg, analyzer=analyzer, renderer=renderer, downloader=downloader)
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
     app.router.add_post("/yookassa-webhook", handle_yookassa_webhook)
     app.router.add_post("/yookassa-webhook-max", handle_yookassa_webhook)
@@ -120,7 +119,7 @@ async def main():
     tasks = []
     if os.getenv("UPDATE_YTDLP", "1") != "0":
         tasks.append(asyncio.create_task(update_ytdlp()))
-    tasks.append(asyncio.create_task(asyncio.to_thread(engine.warmup)))
+    tasks.append(asyncio.create_task(asyncio.to_thread(transcriber.warmup)))
 
     scheduler.add_job(reset_all_daily_limits,
                       CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),

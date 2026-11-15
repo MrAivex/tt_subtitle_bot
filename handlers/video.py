@@ -13,7 +13,7 @@ from services_max import (
     can_process_video,
     increment_video_counter,
 )
-from app import bot, engine, session_manager
+from app import bot, engine, session_manager, ffmpeg
 from config import ADMIN_IDS, MAX_FILE_SIZE_BYTES, MAX_FULL_VIDEO_SEC, MAX_HIGHLIGHTS, MAX_CLIPS_PER_REQUEST
 from utils import extract_video_attachment, download_video, format_moment_time, timed
 from config import MINIAPP_URL
@@ -108,7 +108,7 @@ async def handle_select_moments(chat_id: int, user_id: int, text: str):
             if state.source_url:
                 # Ссылка: качаем ТОЛЬКО выбранный фрагмент
                 await bot.edit_message(chat_id, status_id, f"📥 Скачиваю фрагмент {i}/{len(valid_indices)} из интернета...")
-                from link_downloader import download_section
+                from sources import download_section
                 clip_path = f"downloads/clip_{user_id}_{idx}_{uuid.uuid4().hex[:6]}.mp4"
                 with timed(f"клип {i}: скачивание фрагмента"):
                     clip_path = await download_section(state.source_url, moment["start"], moment["end"], clip_path)
@@ -227,7 +227,7 @@ async def start_processing(chat_id: int, user_id: int):
 
             if state.source_url and video_path.endswith(".wav"):
                 await bot.edit_message(chat_id, status_id, "📥 Скачиваю полное видео из интернета (может занять минуты)...")
-                from link_downloader import download_by_link
+                from sources import download_by_link
                 mp4_path = video_path[:-4] + ".mp4"
                 full_path = await download_by_link(state.source_url, mp4_path)
                 if os.path.exists(video_path):

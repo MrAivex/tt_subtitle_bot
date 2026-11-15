@@ -9,7 +9,7 @@ import wave
 import logging
 import numpy as np
 from faster_whisper import WhisperModel
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont
 from utils import timed
 from highlight_analyzer import analyze_audio
 
@@ -94,32 +94,32 @@ class VideoEngine:
         w, h = map(int, out.split(","))
         return w, h
 
-    def _measure_text(self, font: ImageFont.FreeTypeFont, text: str):
-        bbox = font.getbbox(text)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    # def _measure_text(self, font: ImageFont.FreeTypeFont, text: str):
+    #     bbox = font.getbbox(text)
+    #     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    def _create_text_image(self, text: str, font: ImageFont.FreeTypeFont, text_color: tuple,
-                           bg_color: tuple = None, radius: int = 0, padding: int = 4,
-                           min_height: int = None, stroke_width: int = 0, stroke_fill: tuple = None) -> Image.Image:
-        temp_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
-        temp_draw = ImageDraw.Draw(temp_img)
-        bbox = temp_draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
-        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        img_w = text_w + padding * 2
-        img_h = max(text_h, min_height) + padding * 2 if min_height else text_h + padding * 2
-        img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        if bg_color is not None:
-            draw.rounded_rectangle([(0, 0), (img_w - 1, img_h - 1)], radius=radius, fill=bg_color)
-        y_text = (img_h - text_h) // 2 - bbox[1]
-        draw.text((padding, y_text), text, font=font, fill=text_color, stroke_width=stroke_width, stroke_fill=stroke_fill)
-        return img
+    # def _create_text_image(self, text: str, font: ImageFont.FreeTypeFont, text_color: tuple,
+    #                        bg_color: tuple = None, radius: int = 0, padding: int = 4,
+    #                        min_height: int = None, stroke_width: int = 0, stroke_fill: tuple = None) -> Image.Image:
+    #     temp_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+    #     temp_draw = ImageDraw.Draw(temp_img)
+    #     bbox = temp_draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+    #     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    #     img_w = text_w + padding * 2
+    #     img_h = max(text_h, min_height) + padding * 2 if min_height else text_h + padding * 2
+    #     img = Image.new("RGBA", (img_w, img_h), (0, 0, 0, 0))
+    #     draw = ImageDraw.Draw(img)
+    #     if bg_color is not None:
+    #         draw.rounded_rectangle([(0, 0), (img_w - 1, img_h - 1)], radius=radius, fill=bg_color)
+    #     y_text = (img_h - text_h) // 2 - bbox[1]
+    #     draw.text((padding, y_text), text, font=font, fill=text_color, stroke_width=stroke_width, stroke_fill=stroke_fill)
+    #     return img
 
-    def _create_rounded_rect(self, width: int, height: int, radius: int, color: tuple) -> Image.Image:
-        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([(0, 0), (width - 1, height - 1)], radius=radius, fill=color)
-        return img
+    # def _create_rounded_rect(self, width: int, height: int, radius: int, color: tuple) -> Image.Image:
+    #     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    #     draw = ImageDraw.Draw(img)
+    #     draw.rounded_rectangle([(0, 0), (width - 1, height - 1)], radius=radius, fill=color)
+    #     return img
 
     # ==========================================================
     # ЭТАП 1: СКАНИРОВАНИЕ ХАЙЛАЙТОВ
@@ -136,81 +136,81 @@ class VideoEngine:
             if audio_tmp.exists():
                 audio_tmp.unlink()
 
-    def _find_energy_peaks(self, audio_path: str, frame_sec: float = 0.5, threshold_percentile: float = 90,
-                           min_peak_sec: float = 2.0, merge_gap_sec: float = 3.0) -> List[Dict]:
-        with wave.open(audio_path, "rb") as wf:
-            sr = wf.getframerate()
-            frame_len = int(sr * frame_sec)
-            block_frames = sr * 600
-            rms_list = []
-            leftover = np.empty(0, dtype=np.float32)
+    # def _find_energy_peaks(self, audio_path: str, frame_sec: float = 0.5, threshold_percentile: float = 90,
+    #                        min_peak_sec: float = 2.0, merge_gap_sec: float = 3.0) -> List[Dict]:
+    #     with wave.open(audio_path, "rb") as wf:
+    #         sr = wf.getframerate()
+    #         frame_len = int(sr * frame_sec)
+    #         block_frames = sr * 600
+    #         rms_list = []
+    #         leftover = np.empty(0, dtype=np.float32)
 
-            while True:
-                raw = wf.readframes(block_frames)
-                if not raw: break
-                a = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-                if leftover.size: a = np.concatenate([leftover, a])
-                n = len(a) // frame_len
-                if n:
-                    fr = a[:n * frame_len].reshape(n, frame_len)
-                    rms_list.append(np.sqrt(np.einsum('ij,ij->i', fr, fr) / frame_len))
-                    leftover = a[n * frame_len:]
-                else:
-                    leftover = a
+    #         while True:
+    #             raw = wf.readframes(block_frames)
+    #             if not raw: break
+    #             a = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    #             if leftover.size: a = np.concatenate([leftover, a])
+    #             n = len(a) // frame_len
+    #             if n:
+    #                 fr = a[:n * frame_len].reshape(n, frame_len)
+    #                 rms_list.append(np.sqrt(np.einsum('ij,ij->i', fr, fr) / frame_len))
+    #                 leftover = a[n * frame_len:]
+    #             else:
+    #                 leftover = a
 
-        if not rms_list: return []
-        rms = np.concatenate(rms_list)
-        thr = max(float(np.percentile(rms, threshold_percentile)), 0.02)
+    #     if not rms_list: return []
+    #     rms = np.concatenate(rms_list)
+    #     thr = max(float(np.percentile(rms, threshold_percentile)), 0.02)
 
-        above = rms > thr
-        raw_peaks, start = [], None
-        for i, a in enumerate(above):
-            if a and start is None: start = i
-            elif not a and start is not None:
-                raw_peaks.append((start, i))
-                start = None
-        if start is not None: raw_peaks.append((start, len(above)))
+    #     above = rms > thr
+    #     raw_peaks, start = [], None
+    #     for i, a in enumerate(above):
+    #         if a and start is None: start = i
+    #         elif not a and start is not None:
+    #             raw_peaks.append((start, i))
+    #             start = None
+    #     if start is not None: raw_peaks.append((start, len(above)))
 
-        merged = []
-        for s, e in raw_peaks:
-            if merged and (s - merged[-1][1]) * frame_sec <= merge_gap_sec:
-                merged[-1][1] = e
-            else:
-                merged.append([s, e])
+    #     merged = []
+    #     for s, e in raw_peaks:
+    #         if merged and (s - merged[-1][1]) * frame_sec <= merge_gap_sec:
+    #             merged[-1][1] = e
+    #         else:
+    #             merged.append([s, e])
 
-        moments = []
-        avg = float(rms.mean()) + 1e-9
-        for s, e in merged:
-            dur = (e - s) * frame_sec
-            if dur >= min_peak_sec:
-                moments.append({
-                    "start": round(s * frame_sec, 2), "end": round(e * frame_sec, 2),
-                    "duration": round(dur, 2), "energy": round(float(rms[s:e].mean() / avg), 2),
-                })
-        moments.sort(key=lambda m: m["energy"], reverse=True)
-        return moments
+    #     moments = []
+    #     avg = float(rms.mean()) + 1e-9
+    #     for s, e in merged:
+    #         dur = (e - s) * frame_sec
+    #         if dur >= min_peak_sec:
+    #             moments.append({
+    #                 "start": round(s * frame_sec, 2), "end": round(e * frame_sec, 2),
+    #                 "duration": round(dur, 2), "energy": round(float(rms[s:e].mean() / avg), 2),
+    #             })
+    #     moments.sort(key=lambda m: m["energy"], reverse=True)
+    #     return moments
 
-    def _select_moments(self, moments: List[Dict], video_duration: float, count: int = 5,
-                        pad_before: float = 3.0, pad_after: float = 4.0, min_clip_sec: float = 10.0, max_clip_sec: float = 60.0) -> List[Dict]:
-        result = []
-        for m in moments:
-            start = max(0.0, m["start"] - pad_before)
-            end = min(video_duration, m["end"] + pad_after)
-            if end - start < min_clip_sec:
-                center = (m["start"] + m["end"]) / 2
-                start = max(0.0, center - min_clip_sec / 2)
-                end = min(video_duration, start + min_clip_sec)
-            if end - start > max_clip_sec: end = start + max_clip_sec
-            if any(not (end <= r["start"] or start >= r["end"]) for r in result): continue
-            result.append({"start": round(start, 2), "end": round(end, 2), "energy": m["energy"]})
-            if len(result) >= count: break
-        result.sort(key=lambda r: r["start"])
-        return result
+    # def _select_moments(self, moments: List[Dict], video_duration: float, count: int = 5,
+    #                     pad_before: float = 3.0, pad_after: float = 4.0, min_clip_sec: float = 10.0, max_clip_sec: float = 60.0) -> List[Dict]:
+    #     result = []
+    #     for m in moments:
+    #         start = max(0.0, m["start"] - pad_before)
+    #         end = min(video_duration, m["end"] + pad_after)
+    #         if end - start < min_clip_sec:
+    #             center = (m["start"] + m["end"]) / 2
+    #             start = max(0.0, center - min_clip_sec / 2)
+    #             end = min(video_duration, start + min_clip_sec)
+    #         if end - start > max_clip_sec: end = start + max_clip_sec
+    #         if any(not (end <= r["start"] or start >= r["end"]) for r in result): continue
+    #         result.append({"start": round(start, 2), "end": round(end, 2), "energy": m["energy"]})
+    #         if len(result) >= count: break
+    #     result.sort(key=lambda r: r["start"])
+    #     return result
 
-    def cut_clip(self, video_path: str, start: float, end: float, out_path: str):
-        subprocess.run([self.ffmpeg, "-y", "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", video_path,
-                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", out_path],
-                       check=True, capture_output=True, text=True)
+    # def cut_clip(self, video_path: str, start: float, end: float, out_path: str):
+    #     subprocess.run([self.ffmpeg, "-y", "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", video_path,
+    #                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", out_path],
+    #                    check=True, capture_output=True, text=True)
 
 
 

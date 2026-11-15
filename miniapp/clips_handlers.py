@@ -68,7 +68,7 @@ class ClipsHandlers:
             raise ApiError("Не узнаю ссылку. Подойдут YouTube, Twitch, TikTok, Google Drive и Яндекс.Диск.")
         user = await self._billing.ensure_can_start(uid)
         with self._jobs.slot(uid):
-            job = self._jobs.add(Job(uid, user.chat_id, LinkSource(url, self._dl)))
+            job = self._jobs.add(Job(uid, user.chat_id, LinkSource(url)))
         spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 

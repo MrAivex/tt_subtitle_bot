@@ -9,8 +9,8 @@ from typing import Optional
 
 from .extractor import extract, Yamnet
 from .curves import build_curves
-from .picker import pick, _combine
-from .scorer import enrich, finalize
+from .picker import pick
+from .scorer import enrich, finalize, combine
 
 log = logging.getLogger("timing")
 
@@ -30,9 +30,9 @@ class HighlightAnalyzer:
             return {"duration": dur, "moments": []}
 
         curves = build_curves(feats, g)
-        S = _combine(curves)
+        S = combine(curves)
         use_asr = self._asr is not None
         cands = pick(S, dur, max_moments + 3 if use_asr else max_moments)
-        enrich(cands, curves, wav_path, self._asr)
+        enrich(cands, curves, feats, wav_path, self._asr)
         moments = finalize(cands, max_moments)
         return {"duration": dur, "moments": moments}

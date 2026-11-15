@@ -7,14 +7,6 @@ MIN_CLIP, MAX_CLIP = 10.0, 60.0
 MIN_SCORE = 0.10
 
 
-def _combine(cats):
-    """Итоговая сила = главный тип + бонус за совпадение нескольких."""
-    from highlights.kinds import KINDS
-    vals = np.stack([KINDS[k][2] * np.asarray(cats[k], dtype=np.float32) for k in KINDS])
-    srt = -np.sort(-vals, axis=0)
-    return srt[0] + 0.3 * srt[1] + 0.15 * srt[2]
-
-
 def pick(S, dur, count):
     """Выбрать top-k моментов из кривой интереса S.
 

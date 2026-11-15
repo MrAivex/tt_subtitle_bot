@@ -15,7 +15,7 @@ FR = int(SR * FRAME_SEC)          # 8000 отсчётов в кадре
 SUB = 160                         # 10 мс — для поиска резких всплесков
 BLOCK_FRAMES = 600                # читаем по 5 минут, чтобы не держать весь стрим в памяти
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 YAMNET_MODEL = os.getenv("YAMNET_MODEL", os.path.join(BASE_DIR, "models", "yamnet.tflite"))
 YAMNET_CLASSES = os.getenv("YAMNET_CLASSES", os.path.join(BASE_DIR, "models", "yamnet_class_map.csv"))
 

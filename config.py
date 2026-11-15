@@ -37,5 +37,7 @@ DOWNLOAD_PROXY = os.getenv("DOWNLOAD_PROXY", "")
 PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")
 
 BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")
+
+USE_ASR = os.getenv("HIGHLIGHT_ASR", "1") != "0"
   
 

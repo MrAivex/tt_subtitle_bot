@@ -3,6 +3,7 @@
 import logging
 import wave
 from typing import Optional
+from config import USE_ASR
 
 import numpy as np
 
@@ -26,17 +27,15 @@ def _read_segment(path, start, end):
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def enrich(candidates, curves, wav_path, asr: Optional[callable] = None):
-    """Добавить к каждому кандидату: cats, energy, text, score."""
+def enrich(candidates, curves, feats, wav_path, asr=None):
     from highlights.kinds import KINDS
-    USE_ASR = True  # TODO: вынести в config
-    n = len(curves["rms"])
-    mean_rms = float(curves["rms"].mean()) + 1e-9
+    n = len(feats["rms"])
+    mean_rms = float(feats["rms"].mean()) + 1e-9
 
     for c in candidates:
         a, b = int(c["start"] / 0.5), min(n, int(c["end"] / 0.5) + 1)
         c["cats"] = {k: float(curves[k][a:b].max()) for k in KINDS}
-        c["energy"] = round(float(curves["rms"][a:b].mean() / mean_rms), 2)
+        c["energy"] = round(float(feats["rms"][a:b].mean() / mean_rms), 2)
         c["text"] = ""
         if asr is not None and USE_ASR:
             try:

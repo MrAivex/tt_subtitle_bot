@@ -11,6 +11,7 @@ from subtitles.ass_builder import AssBuilder
 from subtitles.renderer import SubtitleRenderer
 from highlights.analyzer import HighlightAnalyzer
 from sources import download_audio_only, download_section, download_by_link, get_title
+from sources import downloader
 
 bot = MaxBot(MAX_TOKEN)
 session_manager = SessionManager()
@@ -22,12 +23,12 @@ font = SubtitleFont()
 renderer = SubtitleRenderer(ffmpeg, transcriber, LineBreaker(font), AssBuilder(font))
 analyzer = HighlightAnalyzer(asr=transcriber.text)
 
-downloader = type("Downloader", (), {
-    "audio_only": download_audio_only,
-    "section": download_section,
-    "by_link": download_by_link,
-    "get_title": get_title,
-})()
+# downloader = type("Downloader", (), {
+#     "audio_only": download_audio_only,
+#     "section": download_section,
+#     "by_link": download_by_link,
+#     "get_title": get_title,
+# })()
 
 # Совместимость со старой логикой в handlers/video.py
 engine = SimpleNamespace(

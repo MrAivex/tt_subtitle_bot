@@ -24,7 +24,7 @@ class ClipsHandlers:
         self._render = render
         self._signer = signer
         self._ffmpeg = ffmpeg
-        self._dl = downloader
+        # self._dl = downloader
 
     def routes(self):
         return [

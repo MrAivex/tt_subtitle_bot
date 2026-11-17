@@ -8,20 +8,29 @@ from services_max import (
 from keyboards.main_kb import main_menu_kb, subscriptions_kb
 from payments import create_payment
 from app import bot
+from config import FREE_PERIOD
 
 
 async def handle_start(chat_id: int, user_id: int):
     async with async_session_max() as session:
         await get_or_create_user(session, user_id, chat_id)
+    promo = ("🎁 *Сейчас ты можешь пользоваться ботом абсолютно бесплатно, "
+             "пока он находится в стадии тестирования!*\n\n") if FREE_PERIOD else ""
     await bot.send_message(
         chat_id,
-        "👋 Привет! Я бот, который накладывает анимированные субтитры на видео.\n\n"
-        "Открой мини-приложение, пришли ссылку на видео — и я верну его с крутыми караоке-субтитрами! 🎬",
+        "👋 Привет! Я бот, который накладывает анимированные субтитры на видео "
+        "и находит лучшие моменты в стримах.\n\n"
+        f"{promo}"
+        "Открой мини-приложение, пришли ссылку на видео или загрузи файл — "
+        "и я верну клипы с крутыми караоке-субтитрами! 🎬",
         reply_markup=main_menu_kb(),
     )
 
 
 async def handle_show_subscriptions(chat_id: int):
+    if FREE_PERIOD:
+        await bot.send_message(chat_id, "🎁 Сейчас всё бесплатно, пока бот в тестировании — подписка не нужна!")
+        return
     lines = ["📦 *Доступные подписки:*"]
     from subscriptions import SUBSCRIPTIONS
     for sub_id, info in SUBSCRIPTIONS.items():

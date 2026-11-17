@@ -1,7 +1,7 @@
 """miniapp/profile_handlers.py — профиль, email, оплата, статистика."""
 from aiohttp import web
 
-from config import ADMIN_IDS
+from config import ADMIN_IDS, FREE_PERIOD
 from payments import create_payment
 from database_max import async_session_max
 from services_max import get_or_create_user, get_users_stats, set_user_email
@@ -30,6 +30,7 @@ class ProfileHandlers:
             "expiry": u.subscription_expiry.strftime("%d.%m.%Y") if u.subscription_expiry else "",
             "subs": [{"id": k, "name": v["name"], "price": v["price"], "description": v["description"]}
                      for k, v in SUBSCRIPTIONS.items() if v["price"] > 0],
+            "free_period": FREE_PERIOD,
         })
 
     async def email(self, request):

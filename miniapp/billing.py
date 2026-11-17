@@ -1,5 +1,5 @@
 """miniapp/billing.py — лимиты видео и списание."""
-from config import ADMIN_IDS
+from config import ADMIN_IDS, FREE_PERIOD
 from database_max import async_session_max
 from services_max import get_or_create_user, can_process_video, increment_video_counter
 from .errors import ApiError
@@ -16,15 +16,19 @@ class Billing:
         user = await self.user(uid)
         if not user.chat_id:
             raise ApiError("Сначала нажми «Старт» в чате с ботом")
-        if uid not in ADMIN_IDS and not can_process_video(user):
+        if not FREE_PERIOD and uid not in ADMIN_IDS and not can_process_video(user):
             raise ApiError("Видео на сегодня закончились. Оформи подписку в профиле.", 403)
         return user
 
     async def charge(self, uid: int, chat_id: int) -> bool:
-        """Списывает одно видео. Возвращает True, если у пользователя премиум."""
         async with async_session_max() as s:
             user = await get_or_create_user(s, uid, chat_id)
             premium = user.active_sub != "default"
             if uid not in ADMIN_IDS:
-                await increment_video_counter(user, s)
+                if FREE_PERIOD:
+                    # дневной счётчик не трогаем, иначе после акции люди упрутся в лимит
+                    user.total_videos_processed += 1
+                    await s.commit()
+                else:
+                    await increment_video_counter(user, s)
             return premium

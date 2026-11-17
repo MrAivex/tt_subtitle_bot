@@ -202,9 +202,10 @@ async function home(){
   if(S.up||S.job)return paint();
   try{S.me=await api('/me')}catch(e){return fail(e.message)}
   if(S.tab!=='home')return;
-  const m=S.me,left=m.is_admin||m.limit>1000?'без ограничений':Math.max(0,m.limit-m.used);
+  const m=S.me,left=m.free_period||m.is_admin||m.limit>1000?'без ограничений':Math.max(0,m.limit-m.used);
   $('#v').innerHTML=`${hero('idle','idle')}
   <h1>Нарезка <span class="hl">хайлайтов</span></h1>
+  ${m.free_period?'<p class="sub">🎁 Бесплатно, пока бот в тестировании!</p>':''}
   <p class="sub">Видео на сегодня: <b>${left}</b></p>
   <input id="url" type="url" placeholder="Ссылка на YouTube, Twitch, TikTok, Диск" autocomplete="off">
   <button class="pri" data-a="scan">Найти моменты ✦</button>
@@ -492,12 +493,12 @@ async function profile(){
   $('#v').innerHTML=`${hero('blush','profile')}
   <h1><span class="hl">Профиль</span></h1>
   <div class="card"><b>${free?'Бесплатный тариф':'Подписка активна'}</b>
-  <p>${m.limit>1000?'Без ограничений по видео':'Использовано сегодня: '+m.used+' из '+m.limit}</p>
+  <p>${m.free_period||m.limit>1000?'Без ограничений по видео':'Использовано сегодня: '+m.used+' из '+m.limit}</p>
   ${m.expiry?`<p>Действует до ${esc(m.expiry)}</p>`:''}</div>
   <div class="card"><b>Email для чека</b><br><br>
   <input id="email" type="email" value="${esc(m.email)}" placeholder="name@example.com">
   <button data-a="email">Сохранить email</button></div>
-  ${m.subs.map(s=>`<div class="card sub-card"><b>${esc(s.name)}, ${s.price} ₽</b><p>${esc(s.description)}</p>
+  ${m.free_period?'':m.subs.map(s=>`<div class="card sub-card"><b>${esc(s.name)}, ${s.price} ₽</b><p>${esc(s.description)}</p>
   <button class="pri" data-a="pay" data-id="${esc(s.id)}">Оформить ♡</button></div>`).join('')}
   <div id="adm"></div>`;
   if(m.is_admin)try{const s=await api('/stats');

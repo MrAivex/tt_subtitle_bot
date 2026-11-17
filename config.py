@@ -39,5 +39,8 @@ PROXY_DOMAINS = ("youtube.com", "youtu.be", "twitch.tv", "drive.google.com")
 BOT_USERNAME = os.getenv("MAX_BOT_USERNAME", "")
 
 USE_ASR = os.getenv("HIGHLIGHT_ASR", "1") != "0"
+
+# Бесплатный период: лимит видео в день не действует (FREE_PERIOD=0 в .env, чтобы вернуть лимиты)
+FREE_PERIOD = os.getenv("FREE_PERIOD", "1") != "0"
   
 

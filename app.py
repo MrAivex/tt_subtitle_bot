@@ -1,13 +1,20 @@
-"""Общие объекты приложения. Импортируются всеми модулями."""
-
 from max_bot_client import MaxBot
-from engine import VideoEngine
-from session_manager import SessionManager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import MAX_TOKEN
+from core.ffmpeg_tools import FFmpeg
+from core.transcriber import Transcriber
+from subtitles.font import SubtitleFont
+from subtitles.line_breaker import LineBreaker
+from subtitles.ass_builder import AssBuilder
+from subtitles.renderer import SubtitleRenderer
+from highlights.analyzer import HighlightAnalyzer
+from sources import downloader
 
-# Единые экземпляры (singleton-подобно)
 bot = MaxBot(MAX_TOKEN)
-engine = VideoEngine(device="cpu")
-session_manager = SessionManager()
 scheduler = AsyncIOScheduler()
+
+ffmpeg = FFmpeg()
+transcriber = Transcriber(device="cpu")
+font = SubtitleFont()
+renderer = SubtitleRenderer(ffmpeg, transcriber, LineBreaker(font), AssBuilder(font))
+analyzer = HighlightAnalyzer(asr=transcriber.text)

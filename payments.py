@@ -4,14 +4,13 @@ from dotenv import load_dotenv
 import asyncio
 import uuid
 import traceback
-import os
 import logging
 import requests
 from requests.adapters import HTTPAdapter
+from config import PAYMENT_RETURN_URL
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
@@ -57,10 +56,7 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = 
                     "value": str(sub["price"]) + ".00",
                     "currency": "RUB"
                 },
-                "confirmation": {
-                    "type": "redirect",
-                    "return_url": "https://t.me/tt_subtitle_bot"
-                },
+                "confirmation": {"type": "redirect", "return_url": PAYMENT_RETURN_URL},
                 "capture": True,
                 "description": f"Подписка {sub['name']}",
                 "metadata": {

@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import os
 from aiohttp import web
 import logging
 from apscheduler.triggers.cron import CronTrigger
@@ -9,11 +10,10 @@ from apscheduler.triggers.cron import CronTrigger
 from database_max import init_db_max
 from services_max import reset_all_daily_limits, check_expired_subscriptions
 from config import MAX_WEBHOOK_URL, WEBHOOK_PATH, PORT, MOSCOW_TZ
-from app import bot, scheduler
-from app import engine
+from app import bot, scheduler, transcriber, ffmpeg, analyzer, renderer, downloader
 from webhook import handle_max_webhook
 from yookassa_webhook import handle_yookassa_webhook
-from miniapp.miniapp_api import register_miniapp
+from miniapp import register_miniapp
 
 
 # ============================================================
@@ -94,42 +94,46 @@ async def register_webhook():
 
 
 async def main():
-    ytdlp_task = asyncio.create_task(update_ytdlp())  # в фоне, не ждём
-
-        
     await init_db_max()
-    warmup_task = asyncio.create_task(asyncio.to_thread(engine.warmup))
-    await register_webhook()
 
-    # Планировщик
-    scheduler.add_job(
-        reset_all_daily_limits,
-        CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),
-        id="daily_reset",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        check_expired_subscriptions,
-        CronTrigger(hour=1, minute=0, timezone=MOSCOW_TZ),
-        id="check_expired",
-        replace_existing=True,
-    )
-    scheduler.start()
-
-    # Веб-сервер
+    # 1. Сначала HTTP-сервер: занятый порт виден сразу, без модели и без вебхука
     app = web.Application()
-    register_miniapp(app)
+    register_miniapp(app, ffmpeg=ffmpeg, analyzer=analyzer, renderer=renderer, downloader=downloader)
     app.router.add_post(WEBHOOK_PATH, handle_max_webhook)
     app.router.add_post("/yookassa-webhook", handle_yookassa_webhook)
     app.router.add_post("/yookassa-webhook-max", handle_yookassa_webhook)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    print(f"✅ MAX-бот запущен на порту {PORT}", flush=True)
 
-    print(f"✅ MAX-бот запущен на порту {PORT}")
-    while True:
-        await asyncio.sleep(3600)
+    # 2. Вебхук — только когда сервер реально слушает
+    if os.getenv("REGISTER_WEBHOOK", "1") != "0":
+        await register_webhook()
+    else:
+        print("⚠️ REGISTER_WEBHOOK=0 — вебхук не регистрирую", flush=True)
+
+    # 3. Фоновые задачи; ссылки держим, чтобы таски не собрал GC
+    tasks = []
+    if os.getenv("UPDATE_YTDLP", "1") != "0":
+        tasks.append(asyncio.create_task(update_ytdlp()))
+    tasks.append(asyncio.create_task(asyncio.to_thread(transcriber.warmup)))
+
+    scheduler.add_job(reset_all_daily_limits,
+                      CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),
+                      id="daily_reset", replace_existing=True)
+    scheduler.add_job(check_expired_subscriptions,
+                      CronTrigger(hour=1, minute=0, timezone=MOSCOW_TZ),
+                      id="check_expired", replace_existing=True)
+    scheduler.start()
+
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    finally:
+        await runner.cleanup()
 
 
 if __name__ == "__main__":

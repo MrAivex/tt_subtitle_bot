@@ -1,48 +1,36 @@
-"""Обработчики текстовых команд: /start, /help, /email, /pay, /stats."""
+"""Обработчики текстовых команд: /start, /help, /pay, /stats."""
 
 from database_max import async_session_max
 from services_max import (
     get_or_create_user,
-    set_user_email,
     get_users_stats,
 )
 from keyboards.main_kb import main_menu_kb, subscriptions_kb
 from payments import create_payment
 from app import bot
+from config import FREE_PERIOD
 
 
 async def handle_start(chat_id: int, user_id: int):
     async with async_session_max() as session:
         await get_or_create_user(session, user_id, chat_id)
+    promo = ("🎁 *Сейчас ты можешь пользоваться ботом абсолютно бесплатно, "
+             "пока он находится в стадии тестирования!*\n\n") if FREE_PERIOD else ""
     await bot.send_message(
         chat_id,
-        "👋 Привет! Я бот, который накладывает анимированные субтитры на видео.\n\n"
-        "Просто отправь мне видео — и я верну его с крутыми караоке-субтитрами! 🎬",
-        reply_markup=main_menu_kb(),
-    )
-
-
-async def handle_ask_email(chat_id: int):
-    await bot.send_message(
-        chat_id,
-        "✉️ Отправь свой email одним сообщением (нужен для отправки чеков).",
-    )
-
-
-async def handle_email_input(chat_id: int, user_id: int, email: str):
-    if "@" not in email or "." not in email:
-        await bot.send_message(chat_id, "❌ Кажется, email невалидный. Попробуй ещё раз: /email")
-        return
-    async with async_session_max() as session:
-        await set_user_email(session, user_id, email)
-    await bot.send_message(
-        chat_id,
-        f"✅ Email {email} сохранён!",
+        "👋 Привет! Я бот, который накладывает анимированные субтитры на видео "
+        "и находит лучшие моменты в стримах.\n\n"
+        f"{promo}"
+        "Открой мини-приложение, пришли ссылку на видео или загрузи файл — "
+        "и я верну клипы с крутыми караоке-субтитрами! 🎬",
         reply_markup=main_menu_kb(),
     )
 
 
 async def handle_show_subscriptions(chat_id: int):
+    if FREE_PERIOD:
+        await bot.send_message(chat_id, "🎁 Сейчас всё бесплатно, пока бот в тестировании — подписка не нужна!")
+        return
     lines = ["📦 *Доступные подписки:*"]
     from subscriptions import SUBSCRIPTIONS
     for sub_id, info in SUBSCRIPTIONS.items():
@@ -55,7 +43,7 @@ async def handle_pay(chat_id: int, user_id: int, sub_id: str):
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
     if not user.email:
-        await bot.send_message(chat_id, "✉️ Сначала укажи email командой /email")
+        await bot.send_message(chat_id, await bot.send_message(chat_id, "✉️ Сначала сохрани email в профиле мини-приложения — он нужен для чека."))
         return
     await bot.send_message(chat_id, "⏳ Создаю платёж, подожди...")
     try:
@@ -83,11 +71,9 @@ async def handle_help(chat_id: int):
     await bot.send_message(
         chat_id,
         "🤖 *Справка*\n\n"
-        "*🎬 Найти хайлайты* — найду лучшие моменты в твоём видео\n"
-        "*📦 Подписки* — оформить премиум\n"
+        "/pay — подписки\n"
         "/start — начать\n"
-        "/email — указать email\n"
         "/help — это сообщение\n\n"
-        "Или просто отправь видео — верну с субтитрами!",
+        "Открой мини-приложение, пришли ссылку на видео, я найду интересные моменты и наложу субтитры",
         reply_markup=main_menu_kb(),
     )

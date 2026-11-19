@@ -31,6 +31,8 @@ class Transcriber:
         self._model = None
         self._lock = threading.Lock()
 
+        log.info(f"[WHISPER] загружена модель {self.model_size}, threads={self.cpu_threads}, workers={self.num_workers}")
+
     @property
     def model(self) -> WhisperModel:
         if self._model is None:
@@ -44,6 +46,7 @@ class Transcriber:
                         num_workers=self.num_workers,
                     )
         return self._model
+    
 
     def warmup(self):
         """Прогоняет по одному короткому распознаванию, чтобы первый пользователь не ждал."""

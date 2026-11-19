@@ -3,7 +3,8 @@
 import logging
 import wave
 from typing import Optional
-from config import USE_ASR
+from concurrent.futures import ThreadPoolExecutor
+from config import USE_ASR, HL_ASR_SEC, WHISPER_WORKERS
 
 import numpy as np
 
@@ -32,20 +33,23 @@ def enrich(candidates, curves, feats, wav_path, asr=None):
     n = len(feats["rms"])
     mean_rms = float(feats["rms"].mean()) + 1e-9
 
-    for c in candidates:
+    def one(c):
         a, b = int(c["start"] / 0.5), min(n, int(c["end"] / 0.5) + 1)
         c["cats"] = {k: float(curves[k][a:b].max()) for k in KINDS}
         c["energy"] = round(float(feats["rms"][a:b].mean() / mean_rms), 2)
         c["text"] = ""
         if asr is not None and USE_ASR:
             try:
-                seg_end = min(c["end"], c["start"] + 45.0)
+                seg_end = min(c["end"], c["start"] + HL_ASR_SEC)
                 audio = _read_segment(wav_path, c["start"], seg_end)
                 c["text"] = (asr(audio) or "").strip().lower()
                 c["cats"] = apply_text(c["cats"], c["text"], seg_end - c["start"])
             except Exception as e:
                 log.warning(f"[HIGHLIGHTS] ASR не сработал: {type(e).__name__}: {e}")
         c["score"] = float(combine(c["cats"]))
+
+    with ThreadPoolExecutor(max_workers=WHISPER_WORKERS) as ex:
+        list(ex.map(one, candidates))
 
 
 def finalize(candidates, max_moments):

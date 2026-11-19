@@ -57,7 +57,7 @@ class FFmpeg:
     def cut_clip(self, src, start, end, dst):
         """Нарезка клипа в полном качестве."""
         self._run(["-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "aac", "-b:a", "128k", str(dst)])
 
     def make_preview(self, src, start, end, dst, max_height=360):
@@ -96,7 +96,7 @@ class FFmpeg:
         w, h = self.resolution(src)
         cw, ch, x, y = self.vertical_crop_box(w, h)
         self._run(["-i", str(src), "-vf", f"crop={cw}:{ch}:{x}:{y}",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)])
 
     def burn_ass(self, src, ass_path, fonts_dir, dst, crop_box=None):
@@ -111,5 +111,5 @@ class FFmpeg:
         # запускаем из папки с .ass — путь в фильтре короткий; src и dst должны быть абсолютными
         self._run(["-i", str(src), "-vf", vf,
                    "-map", "0:v", "-map", "0:a?",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)], cwd=str(ass.parent))

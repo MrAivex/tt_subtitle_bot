@@ -22,21 +22,27 @@ _HALLUCINATION_RE = re.compile(
 
 
 class Transcriber:
-    def __init__(self, device: str = "cpu", model_size: str = "small"):
+    def __init__(self, device: str = "cpu", model_size: str = "medium",
+                 cpu_threads: int = 2, num_workers: int = 2):
         self.device = device
         self.model_size = model_size
+        self.cpu_threads = cpu_threads
+        self.num_workers = num_workers
         self._model = None
-        self._lock = threading.Lock()      # сканирование и рендер могут запросить модель одновременно
+        self._lock = threading.Lock()
 
     @property
     def model(self) -> WhisperModel:
-        """Ленивая загрузка: модель создаётся один раз при первом обращении."""
         if self._model is None:
             with self._lock:
                 if self._model is None:
                     compute_type = "float16" if self.device == "cuda" else "int8"
-                    self._model = WhisperModel(self.model_size, device=self.device,
-                                               compute_type=compute_type, cpu_threads=2)
+                    self._model = WhisperModel(
+                        self.model_size, device=self.device,
+                        compute_type=compute_type,
+                        cpu_threads=self.cpu_threads,
+                        num_workers=self.num_workers,
+                    )
         return self._model
 
     def warmup(self):

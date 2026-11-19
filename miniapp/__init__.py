@@ -4,7 +4,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from config import MAX_TOKEN, MAX_HIGHLIGHTS, MAX_FULL_VIDEO_SEC
+from config import MAX_TOKEN, MAX_HIGHLIGHTS, MAX_FULL_VIDEO_SEC, RENDER_SLOTS
 from .auth import InitDataValidator, MediaTokenSigner, auth_tokens
 from .billing import Billing
 from .clips_handlers import ClipsHandlers
@@ -38,7 +38,7 @@ def register_miniapp(app: web.Application, *, ffmpeg, analyzer, renderer, downlo
 
     previews = PreviewService(ffmpeg)
     scan = ScanService(analyzer, previews, MAX_HIGHLIGHTS)
-    render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC)
+    render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC, slots=RENDER_SLOTS)
 
     clips = ClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader)
     profile = ProfileHandlers(billing)

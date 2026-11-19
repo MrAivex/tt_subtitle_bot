@@ -42,5 +42,13 @@ USE_ASR = os.getenv("HIGHLIGHT_ASR", "1") != "0"
 
 # Бесплатный период: лимит видео в день не действует (FREE_PERIOD=0 в .env, чтобы вернуть лимиты)
 FREE_PERIOD = os.getenv("FREE_PERIOD", "1") != "0"
+
+
+# Whisper: одна модель medium на всё
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
+WHISPER_THREADS = int(os.getenv("WHISPER_THREADS", "2"))   # потоков на одно распознавание
+WHISPER_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))   # распознаваний одновременно
+RENDER_SLOTS = int(os.getenv("RENDER_SLOTS", "2"))
+HL_ASR_SEC = 30.0                                          # сколько секунд момента слушать для хайлайтов
   
 

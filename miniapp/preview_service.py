@@ -13,10 +13,17 @@ class PreviewService:
 
     async def run(self, job):
         try:
-            async with self._slots:
-                for i, m in enumerate(job.moments):
-                    job.progress = f"Превью {i + 1}/{len(job.moments)}"
-                    job.previews.append(await self._one(job, i, m))
+            done = 0
+
+            async def work(i, m):
+                nonlocal done
+                async with self._slots:
+                    r = await self._one(job, i, m)
+                job.previews.append(r)
+                done += 1
+                job.progress = f"Превью {done}/{len(job.moments)}"
+
+            await asyncio.gather(*(work(i, m) for i, m in enumerate(job.moments)))
             job.previews_status = "done"
             job.progress = ""
         except Exception:

@@ -31,20 +31,22 @@ class Transcriber:
         self._model = None
         self._lock = threading.Lock()
 
-        log.info(f"[WHISPER] загружена модель {self.model_size}, threads={self.cpu_threads}, workers={self.num_workers}")
-
     @property
     def model(self) -> WhisperModel:
         if self._model is None:
             with self._lock:
                 if self._model is None:
                     compute_type = "float16" if self.device == "cuda" else "int8"
-                    self._model = WhisperModel(
-                        self.model_size, device=self.device,
-                        compute_type=compute_type,
-                        cpu_threads=self.cpu_threads,
-                        num_workers=self.num_workers,
-                    )
+                    with timed(f"whisper: загрузка модели {self.model_size}"):
+                        self._model = WhisperModel(
+                            self.model_size, device=self.device,
+                            compute_type=compute_type,
+                            cpu_threads=self.cpu_threads,
+                            num_workers=self.num_workers,
+                        )
+                    log.info(f"[WHISPER] загружена модель {self.model_size}, "
+                             f"compute={compute_type}, threads={self.cpu_threads}, "
+                             f"workers={self.num_workers}")
         return self._model
     
 

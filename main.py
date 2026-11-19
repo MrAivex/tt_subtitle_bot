@@ -36,7 +36,7 @@ SPAM_LOGGERS = [
     "apscheduler", "apscheduler.scheduler",
     "httpx", "httpx2", "httpcore",
     "huggingface_hub", 
-    # "faster_whisper",
+    "faster_whisper",
     "urllib3", "urllib3.connectionpool",
     "PIL", "PIL.PngImagePlugin",
     "sqlalchemy", "sqlalchemy.engine",

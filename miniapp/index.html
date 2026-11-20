@@ -212,10 +212,11 @@ async function home(){
   <div class="or">или</div>
   <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>`;
 }
-function busyView(t,p,kind){
+function busyView(t,p,kind,eta){
   kind=kind||'scan';
   $('#v').innerHTML=`<div class="sfx">${SFX[kind]}</div>${hero('idle',kind)}
   <p class="status">${esc(t)}</p>
+  ${eta?`<p class="pct">Осталось: ${esc(eta)}</p>`:''}
   <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
   ${p==null?'':`<p class="pct">${p}%</p>`}`;
 }
@@ -276,6 +277,17 @@ function bindPlayer(){
     if(pl){pl.hidden=false;pl.innerHTML='Не удалось загрузить превью';}
   });
 }
+
+
+const etaText=s=>{
+  if(s==null)return '';
+  if(s<=0)return 'почти готово';
+  if(s<45)return 'меньше минуты';
+  const m=Math.ceil(s/60);
+  return '≈ '+m+' '+(m%10===1&&m%100!==11?'минута':(m%10>=2&&m%10<=4&&(m%100<10||m%100>=20)?'минуты':'минут'));
+};
+
+
 function pui(){
   const v=$('#pv');if(!v)return;
   const d=v.duration||0,c=v.currentTime||0;
@@ -380,7 +392,11 @@ function updateAct(){
   const idxs=[...S.sel].sort((a,b)=>a-b),rs=renders();
   const st=idxs.map(i=>(rs[String(i)]||{}).status);
   if(!idxs.length){b.disabled=true;b.innerHTML='Отметь клипы галочками';b.dataset.m='none'}
-  else if(st.some(s=>s==='pending')){b.disabled=true;b.innerHTML='<span class="spin"></span> Готовлю…';b.dataset.m='wait'}
+  else if(st.some(s=>s==='pending')){
+    const left=Math.max(0,...idxs.map(i=>(rs[String(i)]||{}).eta_left||0));
+    b.disabled=true;
+    b.innerHTML='<span class="spin"></span> Готовлю… '+(left?etaText(left):'');
+    b.dataset.m='wait'}
   else if(st.every(s=>s==='ready')){b.disabled=false;b.innerHTML=`⬇ Скачать выбранные: ${idxs.length}`;b.dataset.m='dl'}
   else if(st.some(s=>s==='error')){b.disabled=false;b.innerHTML=`↻ Повторить: ${idxs.length}`;b.dataset.m='prep'}
   else{b.disabled=false;b.innerHTML=`⚡ Подготовить выбранные: ${idxs.length}`;b.dataset.m='prep'}
@@ -403,7 +419,7 @@ function paint(){
   const j=S.job;
   if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct,'up');
   if(!j)return home();
-  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan');
+  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan',j.eta_left>=0&&j.eta_left!==undefined&&j.eta_left!==0?etaText(j.eta_left):'');
   if(j.status==='error')return fail(j.error);
   if(!$('#pbox')){
     $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>

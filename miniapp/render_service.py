@@ -2,9 +2,11 @@
 import asyncio
 import re
 import traceback
+import time
 
 from .errors import ApiError
 from .jobs import FULL_VIDEO, rm
+from .eta import eta
 
 _BAD_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
@@ -33,16 +35,26 @@ class RenderService:
         self._billing = billing
         self._max_full_sec = max_full_sec
         self._slots = asyncio.Semaphore(slots)
+        self._slots_n = slots
+        self._ahead = 0 
 
     async def run(self, job, idx: int, subs: bool, vertical: bool):
-        extra: list = []      # файлы, которые удаляются вместе с рендером
+        extra: list = []
+        key = "full" if idx == FULL_VIDEO else "clip"
+        sec = job.duration if idx == FULL_VIDEO else job.moments[idx]["end"] - job.moments[idx]["start"]
+        own = eta.estimate(key, sec)
+        wait = (self._ahead / self._slots_n) * own        # грубо: ждём предыдущих
+        job.renders[idx] = {"status": "pending", "eta": own + wait, "eta_ts": time.time()}
+        self._ahead += 1
         try:
             async with self._slots:
+                t0 = time.time()
                 await self._charge_once(job)
                 if idx == FULL_VIDEO:
                     job.renders[idx] = await self._full(job, vertical, extra)
                 else:
                     job.renders[idx] = await self._clip(job, idx, subs, vertical, extra)
+                eta.record(key, sec, time.time() - t0)
             job.progress = ""
         except ApiError as e:
             rm(*extra)
@@ -51,6 +63,8 @@ class RenderService:
             traceback.print_exc()
             rm(*extra)
             job.renders[idx] = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        finally:
+            self._ahead -= 1
 
     async def _charge_once(self, job):
         if not job.charged:

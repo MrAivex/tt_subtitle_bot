@@ -7,3 +7,4 @@ __pycache__/
 downloads/
 temp_sub_img/
 *.log
+eta.json

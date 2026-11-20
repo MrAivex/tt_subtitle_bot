@@ -248,3 +248,21 @@ async def download_section(url: str, start: float, end: float, out_path: str,
                            max_height: int = 1080) -> str:
     stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
     return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem, max_height)
+
+
+def _ytdlp_duration_sync(url: str) -> float:
+    import yt_dlp
+    opts = {"quiet": True, "no_warnings": True, "noplaylist": True,
+            "skip_download": True, "socket_timeout": 15}
+    if _needs_proxy(url):
+        from config import DOWNLOAD_PROXY
+        opts["proxy"] = DOWNLOAD_PROXY
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return float(info.get("duration") or 0)
+
+
+async def get_duration(url: str) -> float:
+    if detect_platform(url) == "Яндекс.Диск":
+        return 0.0
+    return await asyncio.to_thread(_ytdlp_duration_sync, url)

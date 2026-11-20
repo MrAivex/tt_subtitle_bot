@@ -22,6 +22,10 @@ class FileSource(MediaSource):
             await asyncio.to_thread(self._ff.cut_clip, self.path, start, end, out)
         return out
 
+
+    async def duration(self):
+        return await asyncio.to_thread(self._ff.duration, self.path)
+
     async def full_video(self, out):
         return self.path                 # исходник — не копируем
 

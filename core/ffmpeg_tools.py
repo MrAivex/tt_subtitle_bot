@@ -113,3 +113,10 @@ class FFmpeg:
                    "-map", "0:v", "-map", "0:a?",
                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)], cwd=str(ass.parent))
+
+
+    def extract_wav_speech(self, src, dst):
+        """Звук для распознавания: срезаем гул и выравниваем громкость речи."""
+        self._run(["-i", str(src), "-vn", "-ar", "16000", "-ac", "1",
+                   "-af", "highpass=f=80,dynaudnorm=f=150:g=15",
+                   str(dst)])

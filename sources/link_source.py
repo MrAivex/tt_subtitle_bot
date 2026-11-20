@@ -21,5 +21,10 @@ class LinkSource(MediaSource):
     async def full_video(self, out):
         return await downloader.download_by_link(self.url, out)
 
+
+    async def duration(self):
+        return await downloader.get_duration(self.url)
+    
+
     def cleanup(self):
         pass  # ничего не храним на диске

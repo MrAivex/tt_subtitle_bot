@@ -49,6 +49,11 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
 WHISPER_THREADS = int(os.getenv("WHISPER_THREADS", "2"))   # потоков на одно распознавание
 WHISPER_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))   # распознаваний одновременно
 RENDER_SLOTS = int(os.getenv("RENDER_SLOTS", "2"))
-HL_ASR_SEC = 30.0                                          # сколько секунд момента слушать для хайлайтов
+HL_ASR_SEC = 30.0 
+
+WHISPER_BEAM = int(os.getenv("WHISPER_BEAM", "5"))   # 5 = максимум качества, 3 = компромисс, 1 = быстро
+WHISPER_PROMPT = os.getenv(
+    "WHISPER_PROMPT",
+    "Привет! Сегодня мы играем, и вот что получилось. Ну что, поехали!")                                         # сколько секунд момента слушать для хайлайтов
   
 

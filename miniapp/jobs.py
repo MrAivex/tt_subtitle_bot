@@ -40,6 +40,7 @@ class Job:
     renders: dict = field(default_factory=dict)   # idx -> {status, path, name, error, extra}
     eta: float = 0.0          # оценка поиска моментов, сек
     eta_ts: float = 0.0
+    task: object = None    
 
     @property
     def title(self) -> str:
@@ -124,3 +125,6 @@ class JobStore:
     def latest_for(self, user_id: int):
         mine = [j for j in self._jobs.values() if j.user_id == user_id]
         return max(mine, key=lambda j: j.ts, default=None)
+
+    def drop(self, job: Job):
+        self._jobs.pop(job.id, None)

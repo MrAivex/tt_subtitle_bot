@@ -33,6 +33,7 @@ HEADERS = {
 _INFLIGHT: dict = {}
 TITLES: dict = {}
 PROGRESS: dict = {}   # url -> "37%"
+CANCELLED: set = set()
 
 
 def get_title(url: str) -> str:
@@ -96,12 +97,11 @@ def _final_path(ydl, info, stem: str) -> str:
     return guess
 
 
-PROGRESS: dict = {}   # url -> "37%"
-
-
-def _progress_hook_factory(tag: str, url: str = ""):
+def _progress_hook_factory(tag: str, url: str = "", key: str = ""):
     last = {"t": 0.0}
     def hook(d):
+        if key and key in CANCELLED:
+            raise RuntimeError("cancelled")
         if d.get("status") != "downloading":
             return
         done = d.get("downloaded_bytes") or 0
@@ -223,7 +223,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "socket_timeout": 15, "retries": 3,
         "concurrent_fragment_downloads": 8,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
-        "progress_hooks": [_progress_hook_factory("audio", url)],
+        "progress_hooks": [_progress_hook_factory("audio", url, stem)],
         "continuedl": False,   # не продолжаем битый частичный файл
     }
     if _needs_proxy(url):
@@ -233,12 +233,15 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
 
     _apply_safe(opts, safe)
     
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        if len(TITLES) > 500:
-            TITLES.clear()
-        TITLES[url] = (info.get("title") or "").strip()
-        return ydl.prepare_filename(info)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if len(TITLES) > 500:
+                TITLES.clear()
+            TITLES[url] = (info.get("title") or "").strip()
+            return ydl.prepare_filename(info)
+    finally:
+        CANCELLED.discard(stem)
 
 
 async def download_audio_only(url: str, out_wav: str) -> str:

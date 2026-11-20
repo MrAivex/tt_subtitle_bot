@@ -1,12 +1,12 @@
 """miniapp/scan_service.py — поиск моментов."""
 import asyncio
-import traceback
 import time
+import traceback
 
+from sources import downloader
+from .eta import eta
 from .jobs import rm
 from .tasks import spawn
-from .eta import eta
-from sources import downloader
 
 
 class ScanService:
@@ -28,6 +28,7 @@ class ScanService:
             job.eta, job.eta_ts = eta.estimate(key, vid_sec), time.time()
             async with self._slots:
                 t0 = time.time()
+
                 async def ticker():
                     while True:
                         p = downloader.PROGRESS.get(getattr(job.source, "url", ""), "")
@@ -52,13 +53,15 @@ class ScanService:
                 spawn(self._previews.run(job))
             else:
                 job.previews_status = "done"
+        except asyncio.CancelledError:
+            # просим поток yt-dlp остановиться (он сам проверит флаг в хуке прогресса)
+            downloader.CANCELLED.add(wav[:-4] + "_raw")
+            job.source.cleanup()
+            raise
         except Exception as e:
             traceback.print_exc()
             job.eta = 0.0
-            msg = str(e)
-            if "DownloadError" in type(e).__name__ or "fragment" in msg.lower():
-                msg = "Не удалось скачать видео по ссылке. Попробуй ещё раз или загрузи файл"
-            job.status, job.error = "error", msg[:150]
+            job.status, job.error = "error", f"{type(e).__name__}: {str(e)[:150]}"
             job.source.cleanup()
         finally:
             rm(wav)

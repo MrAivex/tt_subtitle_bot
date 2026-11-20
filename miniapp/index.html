@@ -218,7 +218,8 @@ function busyView(t,p,kind,eta){
   <p class="status">${esc(t)}</p>
   ${eta?`<p class="pct">${eta.startsWith('дольше')?esc(eta):'Осталось: '+esc(eta)}</p>`:''}
   <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
-  ${p==null?'':`<p class="pct">${p}%</p>`}`;
+  ${p==null?'':`<p class="pct">${p}%</p>`}
+  <button data-a="${kind==='up'?'cancelup':'cancel'}">${kind==='up'?'Отменить загрузку':'Прервать обработку'}</button>`;
 }
 function fail(t){
   $('#v').innerHTML=`<div class="sfx">${SFX.err}</div>${hero('err','err')}<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
@@ -472,6 +473,12 @@ async function restore(){
   }catch(e){}
   paint();
 }
+
+function resetJob(){
+  S.seq++;resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
+  document.body.classList.remove('hasact');$('#actbar').hidden=true;home();
+}
+
 async function start(p,b){
   try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();P.jobId=null;resetSay();paint();poll()}
   catch(e){toast(e.message);if(e.status===409)restore()}
@@ -479,6 +486,8 @@ async function start(p,b){
 function upload(f){
   S.up={pct:0};resetSay();paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
+  S.up.xhr=x;
+  x.onabort=()=>{S.up=null;badge();home()};
   x.setRequestHeader('X-Init-Data',initData());
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
@@ -541,8 +550,13 @@ document.addEventListener('click',async e=>{
   if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
   else if(a==='subs'){S.subs=!S.subs;updateOpts()}
   else if(a==='fmt'){S.vert=!S.vert;updateOpts()}
-  else if(a==='reset'){resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
-    document.body.classList.remove('hasact');$('#actbar').hidden=true;home()}
+  else if(a==='reset')resetJob();
+  else if(a==='cancel'){
+    b.disabled=true;
+    try{await api(`/jobs/${S.job.id}/cancel`,'POST');resetJob()}
+    catch(x){if(x.status===404)resetJob();else{toast(x.message);tick()}}
+  }
+  else if(a==='cancelup'){if(S.up&&S.up.xhr)S.up.xhr.abort()}
   else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}
   else if(a==='pay'){try{const d=await api('/pay','POST',{sub_id:b.dataset.id});
     b.dataset.a='link';b.dataset.url=d.url;b.textContent='Перейти к оплате'}catch(x){toast(x.message)}}

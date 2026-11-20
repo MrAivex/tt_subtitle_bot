@@ -2,6 +2,7 @@
 import asyncio
 import os
 import traceback
+from utils import timed
 
 
 class PreviewService:
@@ -33,11 +34,12 @@ class PreviewService:
     async def _one(self, job, i: int, m: dict) -> dict:
         prev = job.preview_path(i)
         try:
-            got = await job.source.cut(m["start"], m["end"], prev, max_height=self.HEIGHT)
-            if got != prev and os.path.exists(got):
-                os.replace(got, prev)
-            # moov в начало — чтобы браузер мотал превью, не скачав его целиком
-            await asyncio.to_thread(self._ffmpeg.faststart, prev)
+            with timed(f"превью {i + 1}"):
+                got = await job.source.cut(m["start"], m["end"], prev, max_height=self.HEIGHT)
+                if got != prev and os.path.exists(got):
+                    os.replace(got, prev)
+                # moov в начало — чтобы браузер мотал превью, не скачав его целиком
+                await asyncio.to_thread(self._ffmpeg.faststart, prev)
             return {"idx": i, "status": "ready"}
         except Exception as e:
             traceback.print_exc()

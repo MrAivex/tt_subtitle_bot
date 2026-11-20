@@ -35,6 +35,8 @@ TITLES: dict = {}
 PROGRESS: dict = {}   # url -> "37%"
 CANCELLED: set = set()
 
+FRAG_CONC = int(os.getenv("FRAG_CONC", "32"))
+
 
 def get_title(url: str) -> str:
     return TITLES.get(url, "")
@@ -129,7 +131,7 @@ def _ytdlp_download_sync(url: str, output_path: str, safe: bool = False) -> str:
         "socket_timeout": 15, "retries": 3,
         "fragment_retries": 3,
         "max_filesize": MAX_FILE_SIZE_BYTES,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": FRAG_CONC,
         "progress_hooks": [_progress_hook_factory("video")],
         "continuedl": False,   # не продолжаем битый частичный фай
     }
@@ -221,7 +223,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": FRAG_CONC,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio", url, stem)],
         "continuedl": False,   # не продолжаем битый частичный файл
@@ -272,7 +274,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
         "download_ranges": download_range_func([], [(start, end)]),
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": FRAG_CONC,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
         "continuedl": False,   # не продолжаем битый частичный файл

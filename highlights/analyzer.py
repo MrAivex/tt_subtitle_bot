@@ -11,6 +11,7 @@ from .extractor import extract, Yamnet
 from .curves import build_curves
 from .picker import pick
 from .scorer import enrich, finalize, combine
+from utils import timed
 
 log = logging.getLogger("timing")
 
@@ -20,8 +21,11 @@ class HighlightAnalyzer:
         self._asr = asr
 
     def analyze(self, wav_path: str, max_moments: int = 5) -> dict:
-        yam = Yamnet.load()
-        res = extract(wav_path, yam)
+        from utils import timed
+        with timed("хайлайты: загрузка YAMNet"):
+            yam = Yamnet.load()
+        with timed("хайлайты: признаки + YAMNet"):
+            res = extract(wav_path, yam)
         if res is None:
             return {"duration": 0.0, "moments": []}
         dur, feats, g = res
@@ -33,6 +37,7 @@ class HighlightAnalyzer:
         S = combine(curves)
         use_asr = self._asr is not None
         cands = pick(S, dur, max_moments + 3 if use_asr else max_moments)
-        enrich(cands, curves, feats, wav_path, self._asr)
+        with timed("хайлайты: распознавание кандидатов"):
+            enrich(cands, curves, feats, wav_path, self._asr)
         moments = finalize(cands, max_moments)
         return {"duration": dur, "moments": moments}

@@ -112,6 +112,8 @@ class ClipsHandlers:
         job = self._job(request)
         body = await request.json()
         idx = int(body.get("idx", FULL_VIDEO))
+        if idx == FULL_VIDEO:
+            raise ApiError("Субтитры на всё видео отключены — выбери клипы")
         if idx != FULL_VIDEO:
             if not 0 <= idx < len(job.moments):
                 raise ApiError("Неверный момент")

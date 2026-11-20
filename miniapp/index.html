@@ -431,20 +431,19 @@ function paint(){
     $('#ms').textContent = j.error || (
     j.previews_status==='pending' && j.progress ? j.progress :
     ms.length ? 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡'
-              : 'Можно наложить субтитры на всё видео.');
+              : 'Жду новые видео от тебя ♡');
   buildPlayerBox();
   updateGallery();
   updateOpts();
   updateAct();
 }
 function updateOpts(){
-  const full=renders()['-1'];
   $('#opts').innerHTML=`
     <button data-a="subs" class="${S.subs?'on':''}">Субтитры: ${S.subs?'да':'нет'}</button>
     <button data-a="fmt" class="${S.vert?'on':''}">Формат: ${S.vert?'9:16':'исходный'}</button>
-    ${full&&full.status==='ready'?'<button data-a="dlfull">⬇ Полное видео</button>':'<button data-a="full">Субтитры на всё видео</button>'}
     <button data-a="reset">Новое видео</button>`;
 }
+
 function badge(){
   document.querySelector('nav [data-t=home]').classList.toggle('busy',!!(S.up||busy()));
 }
@@ -541,8 +540,6 @@ document.addEventListener('click',async e=>{
   if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
   else if(a==='subs'){S.subs=!S.subs;updateOpts()}
   else if(a==='fmt'){S.vert=!S.vert;updateOpts()}
-  else if(a==='full')prep(-1);
-  else if(a==='dlfull')downloadOne(-1);
   else if(a==='reset'){resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
     document.body.classList.remove('hasact');$('#actbar').hidden=true;home()}
   else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}

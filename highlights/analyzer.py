@@ -20,7 +20,7 @@ class HighlightAnalyzer:
     def __init__(self, asr: Optional[callable] = None):
         self._asr = asr
 
-    def analyze(self, wav_path: str, max_moments: int = 5) -> dict:
+    def analyze(self, wav_path: str, max_moments: int = 5, stop=None) -> dict:
         from utils import timed
         with timed("хайлайты: загрузка YAMNet"):
             yam = Yamnet.load()
@@ -38,6 +38,6 @@ class HighlightAnalyzer:
         use_asr = self._asr is not None
         cands = pick(S, dur, max_moments + 3 if use_asr else max_moments)
         with timed("хайлайты: распознавание кандидатов"):
-            enrich(cands, curves, feats, wav_path, self._asr)
+            enrich(cands, curves, feats, wav_path, self._asr, stop)
         moments = finalize(cands, max_moments)
         return {"duration": dur, "moments": moments}

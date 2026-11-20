@@ -40,7 +40,8 @@ class Job:
     renders: dict = field(default_factory=dict)   # idx -> {status, path, name, error, extra}
     eta: float = 0.0          # оценка поиска моментов, сек
     eta_ts: float = 0.0
-    task: object = None    
+    task: object = None
+    cancelled: bool = False    
 
     @property
     def title(self) -> str:

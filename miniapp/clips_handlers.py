@@ -113,6 +113,7 @@ class ClipsHandlers:
         if job.status != "scanning":
             raise ApiError("Нечего прерывать: поиск уже завершён", 409)
         if job.task and not job.task.done():
+            job.cancelled = True
             job.task.cancel()
         self._jobs.drop(job)
         return web.json_response({"ok": True})

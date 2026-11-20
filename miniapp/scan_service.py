@@ -20,6 +20,7 @@ class ScanService:
         wav = f"downloads/scan_{job.user_id}_{job.id}.wav"
         key = "scan_link" if job.source.__class__.__name__ == "LinkSource" else "scan_file"
         vid_sec = 0.0
+        analysis = None
         try:
             try:
                 vid_sec = await job.source.duration()
@@ -42,7 +43,9 @@ class ScanService:
                 finally:
                     tk.cancel()
                 job.progress = "Ищу громкие моменты"
-                res = await asyncio.to_thread(self._analyzer.analyze, wav, self._max)
+                analysis = asyncio.ensure_future(
+                    asyncio.to_thread(self._analyzer.analyze, wav, self._max, lambda: job.cancelled))
+                res = await asyncio.shield(analysis)
                 eta.record(key, vid_sec or res["duration"], time.time() - t0)
             job.eta = 0.0
             job.duration = max(res["duration"], 1.0)
@@ -64,4 +67,8 @@ class ScanService:
             job.status, job.error = "error", f"{type(e).__name__}: {str(e)[:150]}"
             job.source.cleanup()
         finally:
-            rm(wav)
+            if analysis is not None and not analysis.done():
+                # поток ещё считает: удалим файл только когда он закончит
+                analysis.add_done_callback(lambda f: (f.exception(), rm(wav)))
+            else:
+                rm(wav)

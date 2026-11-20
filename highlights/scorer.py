@@ -28,7 +28,7 @@ def _read_segment(path, start, end):
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def enrich(candidates, curves, feats, wav_path, asr=None):
+def enrich(candidates, curves, feats, wav_path, asr=None, stop=None):
     from highlights.kinds import KINDS
     n = len(feats["rms"])
     mean_rms = float(feats["rms"].mean()) + 1e-9
@@ -37,6 +37,10 @@ def enrich(candidates, curves, feats, wav_path, asr=None):
         a, b = int(c["start"] / 0.5), min(n, int(c["end"] / 0.5) + 1)
         c["cats"] = {k: float(curves[k][a:b].max()) for k in KINDS}
         c["energy"] = round(float(feats["rms"][a:b].mean() / mean_rms), 2)
+        if stop and stop():
+            c["text"] = ""
+            c["score"] = float(combine(c["cats"]))
+            return
         c["text"] = ""
         if asr is not None and USE_ASR:
             try:

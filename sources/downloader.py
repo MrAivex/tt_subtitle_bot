@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import time
+import glob
 from urllib.parse import quote, urlparse
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,22 @@ def _needs_proxy(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
 
+def _retry_fragments(fn, stem, *args):
+    import yt_dlp
+    try:
+        return fn(*args)
+    except yt_dlp.utils.DownloadError as e:
+        if "fragment" not in str(e).lower():
+            raise
+        logger.warning(f"[LINK] ошибка фрагментов, повторяю в 1 поток: {str(e)[:150]}")
+        for p in glob.glob(glob.escape(stem) + "*"):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        return fn(*args, 1)
+
+
 def _final_path(ydl, info, stem: str) -> str:
     try:
         fp = info["requested_downloads"][0]["filepath"]
@@ -87,7 +104,7 @@ def _progress_hook_factory(tag: str):
     return hook
 
 
-def _ytdlp_download_sync(url: str, output_path: str) -> str:
+def _ytdlp_download_sync(url: str, output_path: str, conc: int = 8) -> str:
     from config import DOWNLOAD_PROXY, MAX_FILE_SIZE_BYTES
     import yt_dlp
     stem = output_path[:-4] if output_path.endswith(".mp4") else output_path
@@ -99,8 +116,9 @@ def _ytdlp_download_sync(url: str, output_path: str) -> str:
         "socket_timeout": 15, "retries": 3,
         "fragment_retries": 3,
         "max_filesize": MAX_FILE_SIZE_BYTES,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": conc,
         "progress_hooks": [_progress_hook_factory("video")],
+        "continuedl": False,   # не продолжаем битый частичный фай
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
@@ -150,7 +168,7 @@ async def _download_core(url: str, output_path: str) -> str:
     platform = detect_platform(url)
     if platform == "Яндекс.Диск":
         return await _download_yandex_disk(url, output_path)
-    return await asyncio.to_thread(_ytdlp_download_sync, url, output_path)
+    return await asyncio.to_thread(_retry_fragments, _ytdlp_download_sync, output_path[:-4], url, output_path)
 
 
 def _clone_file(src: str, dst: str) -> str:
@@ -181,16 +199,17 @@ async def download_by_link(url: str, output_path: str) -> str:
         _INFLIGHT.pop(key, None)
 
 
-def _ytdlp_audio_sync(url: str, stem: str) -> str:
+def _ytdlp_audio_sync(url: str, stem: str, conc: int = 8) -> str:
     import yt_dlp
     opts = {
         "outtmpl": stem,
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": conc,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio")],
+        "continuedl": False,   # не продолжаем битый частичный файл
     }
     if _needs_proxy(url):
         from config import DOWNLOAD_PROXY
@@ -209,7 +228,7 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     from utils import timed
 
     with timed("аудио: yt-dlp"):
-        raw = await asyncio.to_thread(_ytdlp_audio_sync, url, out_wav[:-4] + "_raw")
+        raw = await asyncio.to_thread(_retry_fragments, _ytdlp_audio_sync, out_wav[:-4] + "_raw", url, out_wav[:-4] + "_raw")
     with timed("аудио: ffmpeg → wav"):
         await asyncio.to_thread(
             subprocess.run,
@@ -221,7 +240,7 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     return out_wav
 
 
-def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_height: int = 1080) -> str:
+def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_height: int = 1080, conc: int = 8) -> str:
     import yt_dlp
     from yt_dlp.utils import download_range_func
     h = int(max_height)
@@ -232,9 +251,10 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
         "download_ranges": download_range_func([], [(start, end)]),
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": conc,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
+        "continuedl": False,   # не продолжаем битый частичный файл
     }
     if _needs_proxy(url):
         from config import DOWNLOAD_PROXY
@@ -247,7 +267,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
 async def download_section(url: str, start: float, end: float, out_path: str,
                            max_height: int = 1080) -> str:
     stem = out_path[:-4] if out_path.endswith(".mp4") else out_path
-    return await asyncio.to_thread(_ytdlp_section_sync, url, start, end, stem, max_height)
+    return await asyncio.to_thread(_retry_fragments, _ytdlp_section_sync, stem, url, start, end, stem, max_height)
 
 
 def _ytdlp_duration_sync(url: str) -> float:

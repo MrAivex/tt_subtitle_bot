@@ -44,7 +44,10 @@ class ScanService:
         except Exception as e:
             traceback.print_exc()
             job.eta = 0.0
-            job.status, job.error = "error", f"{type(e).__name__}: {str(e)[:150]}"
+            msg = str(e)
+            if "DownloadError" in type(e).__name__ or "fragment" in msg.lower():
+                msg = "Не удалось скачать видео по ссылке. Попробуй ещё раз или загрузи файл"
+            job.status, job.error = "error", msg[:150]
             job.source.cleanup()
         finally:
             rm(wav)

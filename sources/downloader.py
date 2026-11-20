@@ -56,6 +56,13 @@ def _needs_proxy(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
+def _apply_safe(opts: dict, safe: bool):
+    """Запасной режим: HLS качает ffmpeg, фрагменты по одному."""
+    if safe:
+        opts["concurrent_fragment_downloads"] = 1
+        opts["hls_prefer_native"] = False
+        opts["external_downloader"] = {"m3u8": "ffmpeg"}
+
 
 def _retry_fragments(fn, stem, *args):
     import yt_dlp
@@ -64,13 +71,13 @@ def _retry_fragments(fn, stem, *args):
     except yt_dlp.utils.DownloadError as e:
         if "fragment" not in str(e).lower():
             raise
-        logger.warning(f"[LINK] ошибка фрагментов, повторяю в 1 поток: {str(e)[:150]}")
+        logger.warning(f"[LINK] ошибка фрагментов, повторяю через ffmpeg: {str(e)[:150]}")
         for p in glob.glob(glob.escape(stem) + "*"):
             try:
                 os.remove(p)
             except OSError:
                 pass
-        return fn(*args, 1)
+        return fn(*args, True)
 
 
 def _final_path(ydl, info, stem: str) -> str:
@@ -104,7 +111,7 @@ def _progress_hook_factory(tag: str):
     return hook
 
 
-def _ytdlp_download_sync(url: str, output_path: str, conc: int = 8) -> str:
+def _ytdlp_download_sync(url: str, output_path: str, safe: bool = False) -> str:
     from config import DOWNLOAD_PROXY, MAX_FILE_SIZE_BYTES
     import yt_dlp
     stem = output_path[:-4] if output_path.endswith(".mp4") else output_path
@@ -116,7 +123,7 @@ def _ytdlp_download_sync(url: str, output_path: str, conc: int = 8) -> str:
         "socket_timeout": 15, "retries": 3,
         "fragment_retries": 3,
         "max_filesize": MAX_FILE_SIZE_BYTES,
-        "concurrent_fragment_downloads": conc,
+        "concurrent_fragment_downloads": 8,
         "progress_hooks": [_progress_hook_factory("video")],
         "continuedl": False,   # не продолжаем битый частичный фай
     }
@@ -125,6 +132,8 @@ def _ytdlp_download_sync(url: str, output_path: str, conc: int = 8) -> str:
         logger.info(f"[LINK] Качаю через прокси: {url}")
     else:
         logger.info(f"[LINK] Качаю напрямую: {url}")
+
+    _apply_safe(opts, safe)
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -199,14 +208,14 @@ async def download_by_link(url: str, output_path: str) -> str:
         _INFLIGHT.pop(key, None)
 
 
-def _ytdlp_audio_sync(url: str, stem: str, conc: int = 8) -> str:
+def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
     import yt_dlp
     opts = {
         "outtmpl": stem,
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "concurrent_fragment_downloads": conc,
+        "concurrent_fragment_downloads": 8,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio")],
         "continuedl": False,   # не продолжаем битый частичный файл
@@ -215,6 +224,9 @@ def _ytdlp_audio_sync(url: str, stem: str, conc: int = 8) -> str:
         from config import DOWNLOAD_PROXY
         opts["proxy"] = DOWNLOAD_PROXY
         logger.info(f"[LINK] Аудио через прокси: {url}")
+
+    _apply_safe(opts, safe)
+    
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         if len(TITLES) > 500:
@@ -240,7 +252,7 @@ async def download_audio_only(url: str, out_wav: str) -> str:
     return out_wav
 
 
-def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_height: int = 1080, conc: int = 8) -> str:
+def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_height: int = 1080, safe: bool = False) -> str:
     import yt_dlp
     from yt_dlp.utils import download_range_func
     h = int(max_height)
@@ -251,7 +263,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
         "download_ranges": download_range_func([], [(start, end)]),
-        "concurrent_fragment_downloads": conc,
+        "concurrent_fragment_downloads": 8,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
         "continuedl": False,   # не продолжаем битый частичный файл
@@ -259,6 +271,9 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
     if _needs_proxy(url):
         from config import DOWNLOAD_PROXY
         opts["proxy"] = DOWNLOAD_PROXY
+
+    _apply_safe(opts, safe)
+
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         return _final_path(ydl, info, stem)

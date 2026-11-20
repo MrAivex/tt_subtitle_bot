@@ -6,6 +6,7 @@ import time
 from .jobs import rm
 from .tasks import spawn
 from .eta import eta
+from sources import downloader
 
 
 class ScanService:
@@ -27,8 +28,18 @@ class ScanService:
             job.eta, job.eta_ts = eta.estimate(key, vid_sec), time.time()
             async with self._slots:
                 t0 = time.time()
-                job.progress = "Готовлю звук"
-                await job.source.prepare_audio(wav)
+                async def ticker():
+                    while True:
+                        p = downloader.PROGRESS.get(getattr(job.source, "url", ""), "")
+                        job.progress = f"Скачиваю звук {p}".strip()
+                        await asyncio.sleep(2)
+
+                job.progress = "Скачиваю звук"
+                tk = asyncio.create_task(ticker())
+                try:
+                    await job.source.prepare_audio(wav)
+                finally:
+                    tk.cancel()
                 job.progress = "Ищу громкие моменты"
                 res = await asyncio.to_thread(self._analyzer.analyze, wav, self._max)
                 eta.record(key, vid_sec or res["duration"], time.time() - t0)

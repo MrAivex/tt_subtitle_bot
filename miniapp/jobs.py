@@ -57,6 +57,7 @@ class Job:
         now = time.time()
         eta_left = (max(0.0, self.eta - (now - self.eta_ts))
                     if self.status == "scanning" and self.eta else 0)
+        eta_over = bool(self.status == "scanning" and self.eta and (now - self.eta_ts) > self.eta)
         renders = {}
         for k, v in self.renders.items():
             r = {kk: vv for kk, vv in v.items() if kk not in ("path", "extra", "eta", "eta_ts")}
@@ -67,7 +68,7 @@ class Job:
             "id": self.id, "status": self.status, "progress": self.progress,
             "error": self.error, "duration": self.duration, "moments": self.moments,
             "previews": self.previews, "previews_status": self.previews_status,
-            "title": self.title, "eta_left": eta_left,
+            "title": self.title, "eta_left": eta_left, "eta_over": eta_over,
             "renders": renders, "media_token": media_token,
         }
 

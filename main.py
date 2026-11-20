@@ -44,7 +44,7 @@ SPAM_LOGGERS = [
 
 _fh = logging.FileHandler("timing.log", encoding="utf-8")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
-for _name in ("timing", "link_downloader"):
+for _name in ("timing", "link_downloader", "sources.downloader"):
     _lg = logging.getLogger(_name)
     _lg.setLevel(logging.INFO)
     _lg.addHandler(_fh)

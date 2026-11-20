@@ -32,6 +32,7 @@ HEADERS = {
 
 _INFLIGHT: dict = {}
 TITLES: dict = {}
+PROGRESS: dict = {}   # url -> "37%"
 
 
 def get_title(url: str) -> str:
@@ -95,17 +96,22 @@ def _final_path(ydl, info, stem: str) -> str:
     return guess
 
 
-def _progress_hook_factory(tag: str):
+PROGRESS: dict = {}   # url -> "37%"
+
+
+def _progress_hook_factory(tag: str, url: str = ""):
     last = {"t": 0.0}
     def hook(d):
         if d.get("status") != "downloading":
             return
+        done = d.get("downloaded_bytes") or 0
+        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+        if url and total:
+            PROGRESS[url] = f"{done / total * 100:.0f}%"
         now = time.time()
         if now - last["t"] < 20:
             return
         last["t"] = now
-        done = d.get("downloaded_bytes") or 0
-        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
         pct = f"{done / total * 100:.0f}%" if total else "?"
         logger.info(f"[LINK] {tag}: {done / 1e6:.1f} / {total / 1e6:.1f} MB ({pct})")
     return hook
@@ -217,7 +223,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "socket_timeout": 15, "retries": 3,
         "concurrent_fragment_downloads": 8,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
-        "progress_hooks": [_progress_hook_factory("audio")],
+        "progress_hooks": [_progress_hook_factory("audio", url)],
         "continuedl": False,   # не продолжаем битый частичный файл
     }
     if _needs_proxy(url):

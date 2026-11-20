@@ -216,7 +216,7 @@ function busyView(t,p,kind,eta){
   kind=kind||'scan';
   $('#v').innerHTML=`<div class="sfx">${SFX[kind]}</div>${hero('idle',kind)}
   <p class="status">${esc(t)}</p>
-  ${eta?`<p class="pct">Осталось: ${esc(eta)}</p>`:''}
+  ${eta?`<p class="pct">${eta.startsWith('дольше')?esc(eta):'Осталось: '+esc(eta)}</p>`:''}
   <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
   ${p==null?'':`<p class="pct">${p}%</p>`}`;
 }
@@ -419,7 +419,8 @@ function paint(){
   const j=S.job;
   if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct,'up');
   if(!j)return home();
-  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan',j.eta_left>=0&&j.eta_left!==undefined&&j.eta_left!==0?etaText(j.eta_left):'');
+  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan',
+    j.eta_over?'дольше обычного, не закрывай приложение':(j.eta_left>0?etaText(j.eta_left):''));
   if(j.status==='error')return fail(j.error);
   if(!$('#pbox')){
     $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>

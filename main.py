@@ -40,6 +40,7 @@ SPAM_LOGGERS = [
     "urllib3", "urllib3.connectionpool",
     "PIL", "PIL.PngImagePlugin",
     "sqlalchemy", "sqlalchemy.engine",
+    "urllib3.connectionpool",
 ]
 
 _fh = logging.FileHandler("timing.log", encoding="utf-8")

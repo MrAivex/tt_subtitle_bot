@@ -50,9 +50,8 @@ for _name in ("timing", "link_downloader", "sources.downloader"):
     _lg.setLevel(logging.INFO)
     _lg.addHandler(_fh)
 
-logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 for logger_name in SPAM_LOGGERS:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
+    logging.getLogger(logger_name).setLevel(logging.ERROR)
 # ============================================================
 
 

@@ -38,6 +38,13 @@ CANCELLED: set = set()
 FRAG_CONC = int(os.getenv("FRAG_CONC", "32"))
 
 
+class _QuietLogger:
+    """Глушит сообщения yt-dlp (предупреждения о пуле соединений и т.п.), ошибки оставляет."""
+    def debug(self, msg): pass
+    def info(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): logger.error(f"[YTDLP] {msg}")
+
 def get_title(url: str) -> str:
     return TITLES.get(url, "")
 
@@ -134,6 +141,7 @@ def _ytdlp_download_sync(url: str, output_path: str, safe: bool = False) -> str:
         "concurrent_fragment_downloads": FRAG_CONC,
         "progress_hooks": [_progress_hook_factory("video")],
         "continuedl": False,   # не продолжаем битый частичный фай
+        "logger": _QuietLogger(),
     }
     if DOWNLOAD_PROXY and _needs_proxy(url):
         opts["proxy"] = DOWNLOAD_PROXY
@@ -227,6 +235,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio", url, stem)],
         "continuedl": False,   # не продолжаем битый частичный файл
+        "logger": _QuietLogger(),
     }
     if _needs_proxy(url):
         from config import DOWNLOAD_PROXY
@@ -278,6 +287,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("clip")],
         "continuedl": False,   # не продолжаем битый частичный файл
+        "logger": _QuietLogger(),
     }
     if _needs_proxy(url):
         from config import DOWNLOAD_PROXY

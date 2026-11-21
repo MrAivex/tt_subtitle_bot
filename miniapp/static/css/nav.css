@@ -1,0 +1,8 @@
+nav{position:fixed;z-index:6;left:16px;right:16px;bottom:calc(12px + env(safe-area-inset-bottom,0));max-width:488px;margin:0 auto;display:flex;gap:6px;
+  background:var(--card);border:3px solid var(--line);border-radius:999px;padding:6px;box-shadow:0 5px 0 var(--sh)}
+nav button{position:relative;margin:0;border:0;box-shadow:none;background:none;padding:10px 8px;display:flex;justify-content:center;gap:8px;align-items:center;flex:1;transition:background .15s}
+nav button:active{transform:scale(.96);box-shadow:none}
+nav button.on{background:var(--pink);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.3)}
+nav button.busy::after{content:"✦";position:absolute;top:-2px;right:14px;color:var(--sun);font-size:18px;-webkit-text-stroke:1px var(--ink);animation:tw 1.2s ease-in-out infinite}
+#toast{position:fixed;z-index:10;left:16px;right:16px;max-width:488px;margin:0 auto;bottom:calc(164px + env(safe-area-inset-bottom,0));background:var(--card);color:var(--ink);
+  padding:12px 16px;border:3px solid var(--line);border-radius:18px;box-shadow:4px 4px 0 var(--pink);display:none;font-weight:800}

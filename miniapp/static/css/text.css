@@ -1,0 +1,13 @@
+h1{font:900 24px/1.15 var(--h);margin:0 0 6px;letter-spacing:-.2px}
+h1 .hl{background:linear-gradient(transparent 58%,var(--hl) 58%);padding:0 3px}
+.sub{color:var(--mute);margin:0 0 16px;font-size:15px}
+.sub b{color:var(--pink);font-family:var(--h)}
+.status{font:800 18px/1.2 var(--h);margin:4px 0 0;text-align:center}
+.pct{margin:6px 0 0;text-align:center;color:var(--mute);font-weight:800}
+.sfx{font:900 40px/1 var(--h);text-align:center;color:var(--sun);transform:rotate(-4deg);margin:6px 0 10px;
+  -webkit-text-stroke:7px var(--ink);paint-order:stroke fill;text-shadow:4px 4px 0 var(--pink);animation:pop 1.1s ease-in-out infinite alternate}
+@media(prefers-color-scheme:dark){.sfx{-webkit-text-stroke:7px #0a0716}}
+@keyframes pop{to{transform:rotate(3deg) scale(1.06)}}
+.name{display:inline-block;max-width:100%;margin:0 0 14px;padding:6px 12px;background:var(--hl);border:2.5px solid var(--line);border-radius:12px;
+  font-size:13.5px;transform:rotate(-1deg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.name[hidden]{display:none}

@@ -30,7 +30,7 @@ class SubtitleRenderer:
         ass_path = v.with_name(f"{v.stem}.ass")
         try:
             with timed("clip: ffmpeg → wav"):
-                self._ff.extract_wav(v, wav)
+                self._ff.extract_wav_speech(v, wav)
 
             words = self._transcriber.words(wav)
             if not words:

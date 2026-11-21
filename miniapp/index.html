@@ -212,12 +212,14 @@ async function home(){
   <div class="or">или</div>
   <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>`;
 }
-function busyView(t,p,kind){
+function busyView(t,p,kind,eta){
   kind=kind||'scan';
   $('#v').innerHTML=`<div class="sfx">${SFX[kind]}</div>${hero('idle',kind)}
   <p class="status">${esc(t)}</p>
+  ${eta?`<p class="pct">${eta.startsWith('дольше')?esc(eta):'Осталось: '+esc(eta)}</p>`:''}
   <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
-  ${p==null?'':`<p class="pct">${p}%</p>`}`;
+  ${p==null?'':`<p class="pct">${p}%</p>`}
+  <button data-a="${kind==='up'?'cancelup':'cancel'}">${kind==='up'?'Отменить загрузку':'Прервать обработку'}</button>`;
 }
 function fail(t){
   $('#v').innerHTML=`<div class="sfx">${SFX.err}</div>${hero('err','err')}<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
@@ -276,6 +278,17 @@ function bindPlayer(){
     if(pl){pl.hidden=false;pl.innerHTML='Не удалось загрузить превью';}
   });
 }
+
+
+const etaText=s=>{
+  if(s==null)return '';
+  if(s<=0)return 'почти готово';
+  if(s<45)return 'меньше минуты';
+  const m=Math.ceil(s/60);
+  return '≈ '+m+' '+(m%10===1&&m%100!==11?'минута':(m%10>=2&&m%10<=4&&(m%100<10||m%100>=20)?'минуты':'минут'));
+};
+
+
 function pui(){
   const v=$('#pv');if(!v)return;
   const d=v.duration||0,c=v.currentTime||0;
@@ -380,7 +393,11 @@ function updateAct(){
   const idxs=[...S.sel].sort((a,b)=>a-b),rs=renders();
   const st=idxs.map(i=>(rs[String(i)]||{}).status);
   if(!idxs.length){b.disabled=true;b.innerHTML='Отметь клипы галочками';b.dataset.m='none'}
-  else if(st.some(s=>s==='pending')){b.disabled=true;b.innerHTML='<span class="spin"></span> Готовлю…';b.dataset.m='wait'}
+  else if(st.some(s=>s==='pending')){
+    const left=Math.max(0,...idxs.map(i=>(rs[String(i)]||{}).eta_left||0));
+    b.disabled=true;
+    b.innerHTML='<span class="spin"></span> Готовлю… '+(left?etaText(left):'');
+    b.dataset.m='wait'}
   else if(st.every(s=>s==='ready')){b.disabled=false;b.innerHTML=`⬇ Скачать выбранные: ${idxs.length}`;b.dataset.m='dl'}
   else if(st.some(s=>s==='error')){b.disabled=false;b.innerHTML=`↻ Повторить: ${idxs.length}`;b.dataset.m='prep'}
   else{b.disabled=false;b.innerHTML=`⚡ Подготовить выбранные: ${idxs.length}`;b.dataset.m='prep'}
@@ -403,7 +420,8 @@ function paint(){
   const j=S.job;
   if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct,'up');
   if(!j)return home();
-  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan');
+  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan',
+    j.eta_over?'дольше обычного, не закрывай приложение':(j.eta_left>0?etaText(j.eta_left):''));
   if(j.status==='error')return fail(j.error);
   if(!$('#pbox')){
     $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>
@@ -415,20 +433,19 @@ function paint(){
     $('#ms').textContent = j.error || (
     j.previews_status==='pending' && j.progress ? j.progress :
     ms.length ? 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡'
-              : 'Можно наложить субтитры на всё видео.');
+              : 'Жду новые видео от тебя ♡');
   buildPlayerBox();
   updateGallery();
   updateOpts();
   updateAct();
 }
 function updateOpts(){
-  const full=renders()['-1'];
   $('#opts').innerHTML=`
     <button data-a="subs" class="${S.subs?'on':''}">Субтитры: ${S.subs?'да':'нет'}</button>
     <button data-a="fmt" class="${S.vert?'on':''}">Формат: ${S.vert?'9:16':'исходный'}</button>
-    ${full&&full.status==='ready'?'<button data-a="dlfull">⬇ Полное видео</button>':'<button data-a="full">Субтитры на всё видео</button>'}
     <button data-a="reset">Новое видео</button>`;
 }
+
 function badge(){
   document.querySelector('nav [data-t=home]').classList.toggle('busy',!!(S.up||busy()));
 }
@@ -456,6 +473,12 @@ async function restore(){
   }catch(e){}
   paint();
 }
+
+function resetJob(){
+  S.seq++;resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
+  document.body.classList.remove('hasact');$('#actbar').hidden=true;home();
+}
+
 async function start(p,b){
   try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();P.jobId=null;resetSay();paint();poll()}
   catch(e){toast(e.message);if(e.status===409)restore()}
@@ -463,6 +486,8 @@ async function start(p,b){
 function upload(f){
   S.up={pct:0};resetSay();paint();
   const x=new XMLHttpRequest();x.open('POST','/api/upload');
+  S.up.xhr=x;
+  x.onabort=()=>{S.up=null;badge();home()};
   x.setRequestHeader('X-Init-Data',initData());
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
@@ -525,10 +550,13 @@ document.addEventListener('click',async e=>{
   if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
   else if(a==='subs'){S.subs=!S.subs;updateOpts()}
   else if(a==='fmt'){S.vert=!S.vert;updateOpts()}
-  else if(a==='full')prep(-1);
-  else if(a==='dlfull')downloadOne(-1);
-  else if(a==='reset'){resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
-    document.body.classList.remove('hasact');$('#actbar').hidden=true;home()}
+  else if(a==='reset')resetJob();
+  else if(a==='cancel'){
+    b.disabled=true;
+    try{await api(`/jobs/${S.job.id}/cancel`,'POST');resetJob()}
+    catch(x){if(x.status===404)resetJob();else{toast(x.message);tick()}}
+  }
+  else if(a==='cancelup'){if(S.up&&S.up.xhr)S.up.xhr.abort()}
   else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}
   else if(a==='pay'){try{const d=await api('/pay','POST',{sub_id:b.dataset.id});
     b.dataset.a='link';b.dataset.url=d.url;b.textContent='Перейти к оплате'}catch(x){toast(x.message)}}

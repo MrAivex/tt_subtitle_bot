@@ -18,9 +18,21 @@ class MediaSource(ABC):
     async def full_video(self, out: str) -> str:
         """Путь к полному видео (для ссылки — скачивает в out)."""
 
+
+    async def duration(self) -> float:
+            """Длительность видео до обработки (0 — неизвестна)."""
+            return 0.0
+    
+
     def is_temp(self, path: str) -> bool:
         """Можно ли удалять файл path после рендера."""
         return True
 
     def cleanup(self) -> None:
         """Удалить всё, что источник хранит на диске."""
+
+
+    async def audio_input(self, out_raw: str) -> str:
+        """Путь к медиафайлу со звуком, который ffmpeg сможет декодировать."""
+
+    

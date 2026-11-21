@@ -42,5 +42,23 @@ USE_ASR = os.getenv("HIGHLIGHT_ASR", "1") != "0"
 
 # Бесплатный период: лимит видео в день не действует (FREE_PERIOD=0 в .env, чтобы вернуть лимиты)
 FREE_PERIOD = os.getenv("FREE_PERIOD", "1") != "0"
+
+
+# Whisper для субтитров (качество важно)
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
+WHISPER_THREADS = int(os.getenv("WHISPER_THREADS", "2"))
+WHISPER_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))
+RENDER_SLOTS = int(os.getenv("RENDER_SLOTS", "2"))
+
+# Whisper для поиска хайлайтов (нужны только слова-маркеры)
+HL_WHISPER_MODEL = os.getenv("HL_WHISPER_MODEL", "small")
+HL_WHISPER_THREADS = int(os.getenv("HL_WHISPER_THREADS", "1"))
+HL_WHISPER_WORKERS = int(os.getenv("HL_WHISPER_WORKERS", "3"))
+HL_ASR_SEC = 45.0          # как было изначально, чтобы не терять слова в конце момента
+
+WHISPER_BEAM = int(os.getenv("WHISPER_BEAM", "5"))   # 5 = максимум качества, 3 = компромисс, 1 = быстро
+WHISPER_PROMPT = os.getenv(
+    "WHISPER_PROMPT",
+    "Привет! Сегодня мы играем, и вот что получилось. Ну что, поехали!")                                         # сколько секунд момента слушать для хайлайтов
   
 

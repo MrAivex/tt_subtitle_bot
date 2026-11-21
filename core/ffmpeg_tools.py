@@ -57,7 +57,7 @@ class FFmpeg:
     def cut_clip(self, src, start, end, dst):
         """Нарезка клипа в полном качестве."""
         self._run(["-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "aac", "-b:a", "128k", str(dst)])
 
     def make_preview(self, src, start, end, dst, max_height=360):
@@ -96,7 +96,7 @@ class FFmpeg:
         w, h = self.resolution(src)
         cw, ch, x, y = self.vertical_crop_box(w, h)
         self._run(["-i", str(src), "-vf", f"crop={cw}:{ch}:{x}:{y}",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)])
 
     def burn_ass(self, src, ass_path, fonts_dir, dst, crop_box=None):
@@ -111,5 +111,21 @@ class FFmpeg:
         # запускаем из папки с .ass — путь в фильтре короткий; src и dst должны быть абсолютными
         self._run(["-i", str(src), "-vf", vf,
                    "-map", "0:v", "-map", "0:a?",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)], cwd=str(ass.parent))
+
+
+    def extract_wav_speech(self, src, dst):
+        """Звук для распознавания: срезаем гул и выравниваем громкость речи."""
+        self._run(["-i", str(src), "-vn", "-ar", "16000", "-ac", "1",
+                   "-af", "highpass=f=80,dynaudnorm=f=150:g=15",
+                   str(dst)])
+
+
+    def start_audio_tee(self, src, wav_dst, err_file):
+        """Один проход декодирования: WAV на диск (для Whisper) + сырой PCM в stdout (для анализа)."""
+        return subprocess.Popen(
+            [self.ffmpeg, "-y", "-nostats", "-loglevel", "error", "-i", str(src),
+            "-map", "0:a:0", "-ar", "16000", "-ac", "1", "-f", "wav", str(wav_dst),
+            "-map", "0:a:0", "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1"],
+            stdout=subprocess.PIPE, stderr=err_file, bufsize=1 << 20)

@@ -35,6 +35,7 @@ class ClipsHandlers:
             web.post("/jobs/{id}/prepare", self.prepare),
             web.get("/jobs/{id}/preview/{idx}", self.preview),
             web.get("/jobs/{id}/download/{idx}", self.download),
+            web.post("/jobs/{id}/cancel", self.cancel),
         ]
 
     # ---------- вспомогательное ----------
@@ -69,7 +70,7 @@ class ClipsHandlers:
         user = await self._billing.ensure_can_start(uid)
         with self._jobs.slot(uid):
             job = self._jobs.add(Job(uid, user.chat_id, LinkSource(url)))
-        spawn(self._scan.run(job))
+        job.task = spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
     async def upload(self, request):
@@ -86,7 +87,7 @@ class ClipsHandlers:
             path = f"downloads/max_{uid}_{uuid.uuid4().hex[:10]}{ext.lower()}"
             await self._save(field, path)
             job = self._jobs.add(Job(uid, user.chat_id, FileSource(path, stem, self._ffmpeg)))
-        spawn(self._scan.run(job))
+        job.task = spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
     # ---------- статус ----------
@@ -106,12 +107,26 @@ class ClipsHandlers:
                 job.seen = True
         return web.json_response({"job": self._pub(job) if job else None})
 
+
+    async def cancel(self, request):
+        job = self._job(request)
+        if job.status != "scanning":
+            raise ApiError("Нечего прерывать: поиск уже завершён", 409)
+        if job.task and not job.task.done():
+            job.cancelled = True
+            job.task.cancel()
+        self._jobs.drop(job)
+        return web.json_response({"ok": True})
+    
+
     # ---------- рендер ----------
 
     async def prepare(self, request):
         job = self._job(request)
         body = await request.json()
         idx = int(body.get("idx", FULL_VIDEO))
+        if idx == FULL_VIDEO:
+            raise ApiError("Субтитры на всё видео отключены — выбери клипы")
         if idx != FULL_VIDEO:
             if not 0 <= idx < len(job.moments):
                 raise ApiError("Неверный момент")

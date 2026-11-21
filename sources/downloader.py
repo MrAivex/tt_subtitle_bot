@@ -255,12 +255,18 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         CANCELLED.discard(stem)
 
 
+async def download_audio_raw(url: str, out_raw: str) -> str:
+    """Скачивает звук как есть (без конвертации). out_raw — полный stem вида «..._raw»."""
+    from utils import timed
+    with timed("аудио: yt-dlp"):
+        return await asyncio.to_thread(_retry_fragments, _ytdlp_audio_sync, out_raw, url, out_raw)
+
+
 async def download_audio_only(url: str, out_wav: str) -> str:
     import subprocess
     from utils import timed
 
-    with timed("аудио: yt-dlp"):
-        raw = await asyncio.to_thread(_retry_fragments, _ytdlp_audio_sync, out_wav[:-4] + "_raw", url, out_wav[:-4] + "_raw")
+    raw = await download_audio_raw(url, out_wav[:-4] + "_raw")
     with timed("аудио: ffmpeg → wav"):
         await asyncio.to_thread(
             subprocess.run,

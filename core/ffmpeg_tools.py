@@ -120,3 +120,12 @@ class FFmpeg:
         self._run(["-i", str(src), "-vn", "-ar", "16000", "-ac", "1",
                    "-af", "highpass=f=80,dynaudnorm=f=150:g=15",
                    str(dst)])
+
+
+    def start_audio_tee(self, src, wav_dst, err_file):
+        """Один проход декодирования: WAV на диск (для Whisper) + сырой PCM в stdout (для анализа)."""
+        return subprocess.Popen(
+            [self.ffmpeg, "-y", "-nostats", "-loglevel", "error", "-i", str(src),
+            "-map", "0:a:0", "-ar", "16000", "-ac", "1", "-f", "wav", str(wav_dst),
+            "-map", "0:a:0", "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1"],
+            stdout=subprocess.PIPE, stderr=err_file, bufsize=1 << 20)

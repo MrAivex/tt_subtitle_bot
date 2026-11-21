@@ -10,14 +10,17 @@ from .tasks import spawn
 
 
 class ScanService:
-    def __init__(self, analyzer, previews, max_moments: int, slots: int = 2):
+    def __init__(self, analyzer, previews, max_moments: int, ffmpeg, slots: int = 2):
         self._analyzer = analyzer
         self._previews = previews
         self._max = max_moments
         self._slots = asyncio.Semaphore(slots)
+        self._ffmpeg = ffmpeg
 
     async def run(self, job):
         wav = f"downloads/scan_{job.user_id}_{job.id}.wav"
+        raw = wav[:-4] + "_raw"          # NEW: тот же stem, что был у download_audio_only, ключ в CANCELLED не меняется
+        src = None                       # NEW: файл, из которого ffmpeg декодирует звук
         key = "scan_link" if job.source.__class__.__name__ == "LinkSource" else "scan_file"
         vid_sec = 0.0
         analysis = None
@@ -39,12 +42,13 @@ class ScanService:
                 job.progress = "Скачиваю звук"
                 tk = asyncio.create_task(ticker())
                 try:
-                    await job.source.prepare_audio(wav)
+                    src = await job.source.audio_input(raw)          # NEW (было prepare_audio(wav))
                 finally:
                     tk.cancel()
                 job.progress = "Ищу громкие моменты"
-                analysis = asyncio.ensure_future(
-                    asyncio.to_thread(self._analyzer.analyze, wav, self._max, lambda: job.cancelled))
+                analysis = asyncio.ensure_future(                     # NEW
+                    asyncio.to_thread(self._analyzer.analyze_media, src, wav, self._ffmpeg,
+                                      self._max, lambda: job.cancelled))
                 res = await asyncio.shield(analysis)
                 eta.record(key, vid_sec or res["duration"], time.time() - t0)
             job.eta = 0.0
@@ -57,8 +61,7 @@ class ScanService:
             else:
                 job.previews_status = "done"
         except asyncio.CancelledError:
-            # просим поток yt-dlp остановиться (он сам проверит флаг в хуке прогресса)
-            downloader.CANCELLED.add(wav[:-4] + "_raw")
+            downloader.CANCELLED.add(raw)                             # NEW: тот же ключ, что и раньше
             job.source.cleanup()
             raise
         except Exception as e:
@@ -67,8 +70,13 @@ class ScanService:
             job.status, job.error = "error", f"{type(e).__name__}: {str(e)[:150]}"
             job.source.cleanup()
         finally:
-            if analysis is not None and not analysis.done():
-                # поток ещё считает: удалим файл только когда он закончит
-                analysis.add_done_callback(lambda f: (f.exception(), rm(wav)))
-            else:
+            def _cleanup(_f=None):                                    # NEW: чистим и wav, и сырой файл
                 rm(wav)
+                if src and job.source.is_temp(src):
+                    rm(src)
+
+            if analysis is not None and not analysis.done():
+                # поток ещё работает: удалим файлы только когда он закончит
+                analysis.add_done_callback(lambda f: (f.exception(), _cleanup()))
+            else:
+                _cleanup()

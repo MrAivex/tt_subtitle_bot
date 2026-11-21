@@ -38,3 +38,6 @@ class FileSource(MediaSource):
                 os.remove(self.path)
             except OSError:
                 pass
+
+    async def audio_input(self, out_raw):
+        return self.path

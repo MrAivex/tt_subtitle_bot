@@ -31,4 +31,8 @@ class MediaSource(ABC):
     def cleanup(self) -> None:
         """Удалить всё, что источник хранит на диске."""
 
+
+    async def audio_input(self, out_raw: str) -> str:
+        """Путь к медиафайлу со звуком, который ffmpeg сможет декодировать."""
+
     

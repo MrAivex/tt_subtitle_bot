@@ -148,37 +148,38 @@ def _block_features(x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, 
 # ---------------------------------------------------------------- главная функция извлечения
 
 def extract(wav_path: str, yam: Optional[Yamnet] = None):
-    """Извлечь фичи из WAV-файла.
-
-    Возвращает (duration, features_dict, yamnet_matrix) или None.
-    features_dict: {"rms", "ons", "cen", "f0"} — каждый np.ndarray длины n.
-    """
     import wave
-
-    rms_l, ons_l, cen_l, f0_l, g_l = [], [], [], [], []
-    tail = np.zeros(yam.tail_len if yam else 0, np.float32)
-
     with wave.open(wav_path, "rb") as wf:
         if wf.getframerate() != SR or wf.getnchannels() != 1 or wf.getsampwidth() != 2:
             raise ValueError("ожидается WAV 16 кГц, моно, 16 бит")
-        dur = wf.getnframes() / float(SR)
-        while True:
-            raw = wf.readframes(FR * BLOCK_FRAMES)
-            if not raw:
-                break
-            a = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-            pad = (-len(a)) % FR
-            if pad:
-                a = np.concatenate([a, np.zeros(pad, np.float32)])
-            r, o, c, f = _block_features(a)
-            rms_l.append(r); ons_l.append(o); cen_l.append(c); f0_l.append(f)
-            if yam:
-                g, tail = yam.run_block(tail, a)
-                g_l.append(g)
+        return extract_stream(lambda n: wf.readframes(n // 2), yam)
+
+
+
+def extract_stream(read, yam: Optional[Yamnet] = None):
+    """read(n_bytes) -> bytes (s16le, 16 кГц, моно); пустые байты = конец."""
+    rms_l, ons_l, cen_l, f0_l, g_l = [], [], [], [], []
+    tail = np.zeros(yam.tail_len if yam else 0, np.float32)
+    total = 0
+    while True:
+        raw = read(FR * BLOCK_FRAMES * 2)
+        raw = raw[: len(raw) // 2 * 2]
+        if not raw:
+            break
+        total += len(raw) // 2
+        a = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        pad = (-len(a)) % FR
+        if pad:
+            a = np.concatenate([a, np.zeros(pad, np.float32)])
+        r, o, c, f = _block_features(a)
+        rms_l.append(r); ons_l.append(o); cen_l.append(c); f0_l.append(f)
+        if yam:
+            g, tail = yam.run_block(tail, a)
+            g_l.append(g)
 
     if not rms_l:
         return None
-
+    dur = total / float(SR)
     feats = dict(rms=np.concatenate(rms_l), ons=np.concatenate(ons_l),
                  cen=np.concatenate(cen_l), f0=np.concatenate(f0_l))
     g = None

@@ -1,0 +1,5 @@
+/* ---------- нижняя кнопка ---------- */
+#actbar{position:fixed;left:16px;right:16px;max-width:488px;margin:0 auto;bottom:calc(84px + env(safe-area-inset-bottom,0));z-index:5}
+#actbar[hidden]{display:none}
+#actbar .pri{margin:0}
+#actbar .pri:disabled{opacity:1;background:#c9a9c0;transform:none;box-shadow:0 5px 0 var(--sh)}

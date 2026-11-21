@@ -1,0 +1,10 @@
+/* маскот + реплика */
+.hero{display:flex;gap:14px;align-items:center;margin:0 0 16px}
+.face{position:relative;flex:none;min-width:96px;padding:18px 8px;text-align:center;white-space:nowrap;font:800 17px/1 var(--h);
+  background:var(--card);border:3px solid var(--line);border-radius:26px;box-shadow:4px 4px 0 var(--sh);transform:rotate(-3deg)}
+.face::before{content:"";position:absolute;inset:-14px;z-index:-1;border-radius:50%;opacity:.22;
+  background:repeating-conic-gradient(var(--pink) 0 5deg,transparent 5deg 10deg);
+  -webkit-mask:radial-gradient(circle,transparent 38%,#000 40%,#000 62%,transparent 70%);mask:radial-gradient(circle,transparent 38%,#000 40%,#000 62%,transparent 70%)}
+.bubble{position:relative;flex:1;padding:11px 14px;font-size:14.5px;background:var(--card);border:3px solid var(--line);border-radius:20px;box-shadow:4px 4px 0 var(--sh)}
+.bubble::before{content:"";position:absolute;left:-10px;top:50%;width:14px;height:14px;margin-top:-7px;background:var(--card);
+  border-left:3px solid var(--line);border-bottom:3px solid var(--line);transform:rotate(45deg)}

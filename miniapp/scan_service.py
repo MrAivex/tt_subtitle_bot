@@ -7,7 +7,7 @@ from .tasks import spawn
 
 
 class ScanService:
-    def __init__(self, analyzer, previews, max_moments: int, slots: int = 2):
+    def __init__(self, analyzer, previews, max_moments: int, ffmpeg=None, slots: int = 2):
         self._analyzer = analyzer
         self._previews = previews
         self._max = max_moments

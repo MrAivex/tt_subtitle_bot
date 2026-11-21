@@ -37,7 +37,7 @@ def register_miniapp(app: web.Application, *, ffmpeg, analyzer, renderer, downlo
     billing = Billing()
 
     previews = PreviewService(ffmpeg)
-    scan = ScanService(analyzer, previews, MAX_HIGHLIGHTS)
+    scan = ScanService(analyzer, previews, MAX_HIGHLIGHTS, ffmpeg)
     render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC, slots=RENDER_SLOTS)
 
     clips = ClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader)

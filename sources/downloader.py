@@ -231,7 +231,8 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "concurrent_fragment_downloads": FRAG_CONC,
+        "concurrent_fragment_downloads": min(FRAG_CONC, 4),
+        "fragment_retries": 10,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio", url, stem)],
         "continuedl": False,   # не продолжаем битый частичный файл

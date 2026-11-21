@@ -38,10 +38,7 @@ class Job:
     previews: list = field(default_factory=list)
     previews_status: str = "pending"  # pending | done | error
     renders: dict = field(default_factory=dict)   # idx -> {status, path, name, error, extra}
-    eta: float = 0.0          # оценка поиска моментов, сек
-    eta_ts: float = 0.0
-    task: object = None
-    cancelled: bool = False    
+    clip_sec: int = 0                 # желаемая длина клипов, 0 = авто
 
     @property
     def title(self) -> str:
@@ -56,22 +53,15 @@ class Job:
             r.get("status") == "pending" for r in self.renders.values())
 
     def public(self, media_token: str) -> dict:
-        now = time.time()
-        eta_left = (max(0.0, self.eta - (now - self.eta_ts))
-                    if self.status == "scanning" and self.eta else 0)
-        eta_over = bool(self.status == "scanning" and self.eta and (now - self.eta_ts) > self.eta)
-        renders = {}
-        for k, v in self.renders.items():
-            r = {kk: vv for kk, vv in v.items() if kk not in ("path", "extra", "eta", "eta_ts")}
-            if v.get("status") == "pending" and v.get("eta"):
-                r["eta_left"] = max(0.0, v["eta"] - (now - v.get("eta_ts", now)))
-            renders[str(k)] = r
+        """То, что уходит в браузер. Пути к файлам (path, extra) сюда попадать не должны."""
         return {
             "id": self.id, "status": self.status, "progress": self.progress,
             "error": self.error, "duration": self.duration, "moments": self.moments,
             "previews": self.previews, "previews_status": self.previews_status,
-            "title": self.title, "eta_left": eta_left, "eta_over": eta_over,
-            "renders": renders, "media_token": media_token,
+            "title": self.title,
+            "renders": {str(k): {kk: vv for kk, vv in v.items() if kk not in ("path", "extra")}
+                        for k, v in self.renders.items()},
+            "media_token": media_token,
         }
 
     def cleanup(self):
@@ -126,6 +116,3 @@ class JobStore:
     def latest_for(self, user_id: int):
         mine = [j for j in self._jobs.values() if j.user_id == user_id]
         return max(mine, key=lambda j: j.ts, default=None)
-
-    def drop(self, job: Job):
-        self._jobs.pop(job.id, None)

@@ -9,11 +9,21 @@ from config import MAX_CLIPS_PER_REQUEST, MAX_FILE_SIZE_BYTES
 from sources import detect_platform
 from sources.file_source import FileSource
 from sources.link_source import LinkSource
+from subtitles.style import SubStyle
 from .errors import ApiError
 from .jobs import FULL_VIDEO, Job, rm
 from .tasks import spawn
 
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
+CLIP_CHOICES = (0, 15, 30, 60, 90)      # секунды, 0 = авто
+
+
+def _clip_sec(v) -> int:
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return 0
+    return v if v in CLIP_CHOICES else 0
 
 
 class ClipsHandlers:
@@ -35,7 +45,6 @@ class ClipsHandlers:
             web.post("/jobs/{id}/prepare", self.prepare),
             web.get("/jobs/{id}/preview/{idx}", self.preview),
             web.get("/jobs/{id}/download/{idx}", self.download),
-            web.post("/jobs/{id}/cancel", self.cancel),
         ]
 
     # ---------- вспомогательное ----------
@@ -64,13 +73,14 @@ class ClipsHandlers:
 
     async def scan(self, request):
         uid = request["uid"]
-        url = ((await request.json()).get("url") or "").strip()
+        body = await request.json()
+        url = (body.get("url") or "").strip()
         if not detect_platform(url):
             raise ApiError("Не узнаю ссылку. Подойдут YouTube, Twitch, TikTok, Google Drive и Яндекс.Диск.")
         user = await self._billing.ensure_can_start(uid)
         with self._jobs.slot(uid):
-            job = self._jobs.add(Job(uid, user.chat_id, LinkSource(url)))
-        job.task = spawn(self._scan.run(job))
+            job = self._jobs.add(Job(uid, user.chat_id, LinkSource(url), clip_sec=_clip_sec(body.get("clip_sec"))))
+        spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
     async def upload(self, request):
@@ -86,8 +96,9 @@ class ClipsHandlers:
                 raise ApiError("Нужен видеофайл: mp4, mov, avi, mkv или webm")
             path = f"downloads/max_{uid}_{uuid.uuid4().hex[:10]}{ext.lower()}"
             await self._save(field, path)
-            job = self._jobs.add(Job(uid, user.chat_id, FileSource(path, stem, self._ffmpeg)))
-        job.task = spawn(self._scan.run(job))
+            job = self._jobs.add(Job(uid, user.chat_id, FileSource(path, stem, self._ffmpeg),
+                                clip_sec=_clip_sec(request.query.get("clip"))))
+        spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
     # ---------- статус ----------
@@ -107,26 +118,12 @@ class ClipsHandlers:
                 job.seen = True
         return web.json_response({"job": self._pub(job) if job else None})
 
-
-    async def cancel(self, request):
-        job = self._job(request)
-        if job.status != "scanning":
-            raise ApiError("Нечего прерывать: поиск уже завершён", 409)
-        if job.task and not job.task.done():
-            job.cancelled = True
-            job.task.cancel()
-        self._jobs.drop(job)
-        return web.json_response({"ok": True})
-    
-
     # ---------- рендер ----------
 
     async def prepare(self, request):
         job = self._job(request)
         body = await request.json()
         idx = int(body.get("idx", FULL_VIDEO))
-        if idx == FULL_VIDEO:
-            raise ApiError("Субтитры на всё видео отключены — выбери клипы")
         if idx != FULL_VIDEO:
             if not 0 <= idx < len(job.moments):
                 raise ApiError("Неверный момент")
@@ -136,12 +133,19 @@ class ClipsHandlers:
                 raise ApiError(f"Не больше {MAX_CLIPS_PER_REQUEST} клипов за раз")
         if job.status != "ready":
             raise ApiError("Задача сейчас занята", 409)
+        subs = bool(body.get("subtitles", True))
+        vertical = bool(body.get("vertical", False))
+        style = SubStyle.from_dict(body.get("style")) if subs else SubStyle()
+        opts = {"subs": subs, "vert": vertical, **style.as_dict()}
         cur = job.renders.get(idx)
-        if cur and cur["status"] in ("pending", "ready"):
+        if cur and cur["status"] in ("pending", "ready") and cur.get("opts") == opts:
             return web.json_response(self._pub(job))
-        job.renders[idx] = {"status": "pending"}
-        spawn(self._render.run(job, idx, bool(body.get("subtitles", True)),
-                               bool(body.get("vertical", False))))
+        if cur and cur["status"] == "pending":
+            raise ApiError("Клип ещё готовится с другими настройками — подожди", 409)
+        if cur:                            # настройки сменились — рендерим заново
+            rm(cur.get("path"), *cur.get("extra", []))
+        job.renders[idx] = {"status": "pending", "opts": opts}
+        spawn(self._render.run(job, idx, subs, vertical, style, opts))
         return web.json_response(self._pub(job))
 
     # ---------- файлы ----------

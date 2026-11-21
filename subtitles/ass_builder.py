@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Callable, List
 
+from subtitles.style import SubStyle
+
 # ---- анимация субтитров ----
 ANIM_SEC = 0.32       # сколько слово «вылетает»
 RISE_K = 0.55         # стартует ниже на столько размеров шрифта
@@ -48,6 +50,10 @@ class _Layout:
     cx: float
     cy: float
     off: tuple          # смещение вниз в узлах кривой вылета
+    text_c: str         # цвет текста (ASS)
+    plate_c: str        # цвет плашки (ASS)
+    plate: bool         # есть ли плашка под активным словом
+    anim_sec: float     # длительность появления слова, 0 = сразу
 
 
 class AssBuilder:
@@ -60,8 +66,8 @@ class AssBuilder:
 
     # ---------- публичный API ----------
     def build(self, lines: List, video_w: int, video_h: int, duration: float,
-              watermark: bool) -> str:
-        lay = self._layout(video_w, video_h)
+              watermark: bool, style: SubStyle = None) -> str:
+        lay = self._layout(video_w, video_h, style or SubStyle())
         out = self._header(lay)
         for li, line in enumerate(lines):
             nxt = lines[li + 1] if li + 1 < len(lines) else None
@@ -71,20 +77,32 @@ class AssBuilder:
         return "\n".join(out) + "\n"
 
     # ---------- части ----------
-    def _layout(self, w: int, h: int) -> _Layout:
+    def _layout(self, w: int, h: int, st: SubStyle) -> _Layout:
         fs = self.font.size_for(w, h)
         family, bold = self.font.describe(fs)
         margin_v = max(40, round(h * 0.07))                 # отступ снизу
-        rise = fs * RISE_K
+        rise = fs * RISE_K * st.rise_dir
         return _Layout(
             w=w, h=h, family=family, bold=-1 if bold else 0, fs=fs,
             stroke=max(2, round(fs / 18)),                  # обводка текста
             pad=max(4, round(fs * 0.16)),                   # «поля» плашки вокруг слова
             margin_v=margin_v,
             wm_fs=max(14, round(fs * 0.78)),
-            cx=w / 2, cy=h - margin_v,                      # якорь строки: низ по центру
+            cx=w / 2, cy=self._anchor_y(h, fs, margin_v, st.pos),   # якорь строки: низ по центру
             off=tuple(rise * (1 - _ease_out(p)) for p in self._nodes),
+            text_c=st.text_ass, plate_c=st.plate_ass or "&H00000000",
+            plate=st.plate_ass is not None,
+            anim_sec=0.0 if st.anim == "none" else ANIM_SEC,
         )
+
+    @staticmethod
+    def _anchor_y(h: int, fs: int, margin_v: int, pos: str) -> float:
+        """Y нижней точки строки: снизу, по центру кадра или сверху."""
+        if pos == "top":
+            return round(h * 0.08) + fs * 1.25
+        if pos == "middle":
+            return h / 2 + fs * 0.6
+        return h - margin_v
 
     @staticmethod
     def _header(L: _Layout) -> List[str]:
@@ -102,10 +120,10 @@ class AssBuilder:
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
             "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
             # Подложка: заливка текста прозрачна, «обводка» = фиолетовая плашка (BorderStyle=3)
-            f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,&H00DD4E9D,&H00000000,"
+            f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,{L.plate_c},&H00000000,"
             f"{b},0,0,0,100,100,0,0,3,{L.pad},0,2,10,10,{L.margin_v},1",
             # Текст: белый с чёрной обводкой
-            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            f"Style: Text,{L.family},{L.fs},{L.text_c},{L.text_c},&H00000000,&H00000000,"
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,2,10,10,{L.margin_v},1",
             # Водяной знак: слева внизу, ~60% непрозрачности
             f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,"
@@ -155,7 +173,7 @@ class AssBuilder:
         return fn
 
     @staticmethod
-    def _timing(line, next_line):
+    def _timing(line, next_line, anim_sec):
         """Моменты появления слов, длительности вылета и конец строки."""
         ws = line.words
         n = len(ws)
@@ -168,9 +186,9 @@ class AssBuilder:
         if next_line is not None:
             hard_end = max(line.end, next_line.words[0].start)
         # Последнему слову сокращаем полёт, если следующая строка начнётся скоро
-        an = [ANIM_SEC] * n
+        an = [anim_sec] * n
         if hard_end < 1e8:
-            an[-1] = min(ANIM_SEC, max(0.12, hard_end - t[-1] - 0.02))
+            an[-1] = min(anim_sec, max(0.12, hard_end - t[-1] - 0.02))
         line_end = min(max(line.end + LINE_TAIL, t[-1] + an[-1] + 0.10), hard_end)
         return t, an, line_end
 
@@ -178,7 +196,7 @@ class AssBuilder:
         ws = line.words
         n = len(ws)
         words = [_ass_escape(w.word) for w in ws]
-        t, an, line_end = self._timing(line, next_line)
+        t, an, line_end = self._timing(line, next_line, L.anim_sec)
         pos = f"{{\\an2\\pos({L.cx:.1f},{L.cy:.1f})}}"
 
         out: List[str] = []
@@ -195,6 +213,11 @@ class AssBuilder:
                 fad = f"{{\\fad(0,{int(LINE_FADE_OUT * 1000)})}}" if i == n - 1 else ""
                 out.append(f"Dialogue: 1,{_ass_time(s0)},{_ass_time(e0)},Text,,0,0,0,,"
                            f"{pos}{fad}{' '.join(parts)}")
+
+            if not L.plate:
+
+                continue
+
 
             # 3) плашка активного слова: летит вместе со словом, потом стоит до его конца
             next_start = ws[i + 1].start if i + 1 < n else None

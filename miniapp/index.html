@@ -143,6 +143,22 @@ nav button.busy::after{content:"✦";position:absolute;top:-2px;right:14px;color
 #actbar[hidden]{display:none}
 #actbar .pri{margin:0}
 #actbar .pri:disabled{opacity:1;background:#c9a9c0;transform:none;box-shadow:0 5px 0 var(--sh)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.chips button{margin:0;padding:8px 6px;flex:1 1 17%;font-size:13px;box-shadow:0 3px 0 var(--sh)}
+.chips button.on{background:var(--lav);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+.chips .sw{flex:0 0 40px;width:40px;height:40px;padding:0;border-radius:50%;font-size:13px}
+.chips .sw.on{outline:3px solid var(--sun);outline-offset:2px}
+.lbl{font:800 13px var(--h);color:var(--mute);margin:10px 2px 0}
+.card .chips{margin-bottom:4px}
+.subpv{position:absolute;left:6%;right:6%;text-align:center;pointer-events:none;font:900 18px/1.25 var(--h);color:#fff;
+  -webkit-text-stroke:4px #000;paint-order:stroke fill}
+.subpv[hidden]{display:none}
+.subpv.bottom{bottom:26%}.subpv.top{top:14%}.subpv.middle{top:50%;margin-top:-12px}
+.subpv i{font-style:normal;padding:0 6px;border-radius:7px}
+@keyframes sfly{from{transform:translateY(70%);opacity:0}}
+@keyframes sdrop{from{transform:translateY(-70%);opacity:0}}
+@keyframes sfade{from{opacity:0}}
+.subpv.a-fly{animation:sfly .4s ease-out}.subpv.a-drop{animation:sdrop .4s ease-out}.subpv.a-fade{animation:sfade .5s}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.bar i.ind{margin-left:30%}}
 </style>
 </head>
@@ -157,9 +173,22 @@ const $=s=>document.querySelector(s),W=window.WebApp;
 try{W&&W.ready()}catch(e){}
 const initData=()=>(W&&W.initData)||new URLSearchParams(location.search).get('init_data')||'';
 const hdr=()=>({'X-Init-Data':initData()});
-const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null,tab:'home',up:null,seq:0};
+const S={me:null,job:null,sel:new Set(),subs:true,vert:false,timer:null,tab:'home',up:null,seq:0,clip:0,style:{pos:'bottom',color:'violet',anim:'fly'}};
 const P={jobId:null,cur:-1,times:new Map(),drag:false};      // состояние плеера
 const thumbs=new Map(); let thumbVer=0, thumbBusy=false;      // кадры для галереи
+const POS={bottom:'Снизу',middle:'По центру',top:'Сверху'};
+const COL={violet:['#fff','#9D4EDD'],pink:['#fff','#FF5FA2'],red:['#fff','#E5384F'],green:['#fff','#1FA971'],yellow:['#FFD23F',null],white:['#fff',null]};
+const ANI={fly:'Снизу вверх',drop:'Сверху вниз',fade:'Проявление',none:'Без анимации'};
+const CLIPS=[[0,'Авто'],[15,'15 с'],[30,'30 с'],[60,'60 с'],[90,'90 с']];
+try{const sv=JSON.parse(localStorage.getItem('opts')||'{}'),z=sv.style||{};
+  if(CLIPS.some(c=>c[0]===sv.clip))S.clip=sv.clip;
+  if(POS[z.pos]&&COL[z.color]&&ANI[z.anim])S.style={pos:z.pos,color:z.color,anim:z.anim}}catch(e){}
+const saveOpts=()=>{try{localStorage.setItem('opts',JSON.stringify({clip:S.clip,style:S.style}))}catch(e){}};
+const chips=(a,items,cur)=>items.map(([v,t])=>`<button data-a="${a}" data-v="${v}" class="${String(v)===String(cur)?'on':''}">${t}</button>`).join('');
+const swatches=cur=>Object.entries(COL).map(([k,[t,p]])=>`<button class="sw ${k===cur?'on':''}" data-a="scol" data-v="${k}" aria-label="${k}" style="background:${p||'#2a1f45'};color:${t}">Aa</button>`).join('');
+// клип уже отрисован, но с другими настройками — его надо готовить заново
+const stale=r=>{const o=r&&r.opts,st=S.style;
+  return !!o&&(o.subs!==S.subs||o.vert!==S.vert||(S.subs&&(o.pos!==st.pos||o.color!==st.color||o.anim!==st.anim)))};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=t=>{t=Math.max(0,Math.round(t||0));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;
   return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')};
@@ -207,19 +236,19 @@ async function home(){
   <h1>Нарезка <span class="hl">хайлайтов</span></h1>
   ${m.free_period?'<p class="sub">🎁 Бесплатно, пока бот в тестировании!</p>':''}
   <p class="sub">Видео на сегодня: <b>${left}</b></p>
+  <div class="lbl">Длина клипов</div>
+  <div class="chips" id="clipch">${chips('clip',CLIPS,S.clip)}</div>
   <input id="url" type="url" placeholder="Ссылка на YouTube, Twitch, TikTok, Диск" autocomplete="off">
   <button class="pri" data-a="scan">Найти моменты ✦</button>
   <div class="or">или</div>
   <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>`;
 }
-function busyView(t,p,kind,eta){
+function busyView(t,p,kind){
   kind=kind||'scan';
   $('#v').innerHTML=`<div class="sfx">${SFX[kind]}</div>${hero('idle',kind)}
   <p class="status">${esc(t)}</p>
-  ${eta?`<p class="pct">${eta.startsWith('дольше')?esc(eta):'Осталось: '+esc(eta)}</p>`:''}
   <div class="bar"><i class="${p==null?'ind':''}" style="width:${p==null?35:p}%"></i></div>
-  ${p==null?'':`<p class="pct">${p}%</p>`}
-  <button data-a="${kind==='up'?'cancelup':'cancel'}">${kind==='up'?'Отменить загрузку':'Прервать обработку'}</button>`;
+  ${p==null?'':`<p class="pct">${p}%</p>`}`;
 }
 function fail(t){
   $('#v').innerHTML=`<div class="sfx">${SFX.err}</div>${hero('err','err')}<h1>Не получилось</h1><p class="sub err">${esc(t||'Неизвестная ошибка')}</p><button class="pri" data-a="reset">Попробовать снова</button>`;
@@ -234,6 +263,7 @@ function buildPlayerBox(){
     P.jobId=j.id;P.cur=-1;
     $('#pbox').innerHTML=`<div class="player">
       <video id="pv" playsinline preload="metadata"></video>
+      <div class="subpv" id="subpv" hidden></div>
       <span class="ptag" id="ptag"></span>
       <button class="roundtr" id="mute" aria-label="Звук">🔊</button>
       <button class="center" id="bigplay" aria-label="Смотреть">▶</button>
@@ -244,7 +274,7 @@ function buildPlayerBox(){
       </div>
     </div>
     <div class="meta" id="curmeta"></div>`;
-    bindPlayer();
+    bindPlayer();subPv(true);
   }
   if(P.cur===-1){
     const first=(j.previews||[]).find(p=>p.status==='ready');
@@ -278,17 +308,6 @@ function bindPlayer(){
     if(pl){pl.hidden=false;pl.innerHTML='Не удалось загрузить превью';}
   });
 }
-
-
-const etaText=s=>{
-  if(s==null)return '';
-  if(s<=0)return 'почти готово';
-  if(s<45)return 'меньше минуты';
-  const m=Math.ceil(s/60);
-  return '≈ '+m+' '+(m%10===1&&m%100!==11?'минута':(m%10>=2&&m%10<=4&&(m%100<10||m%100>=20)?'минуты':'минут'));
-};
-
-
 function pui(){
   const v=$('#pv');if(!v)return;
   const d=v.duration||0,c=v.currentTime||0;
@@ -324,7 +343,7 @@ function updateGallery(){
   const j=S.job;if(!j||!$('#grid'))return;
   const ms=j.moments||[];
   const sig=JSON.stringify([j.id,ms.length,(j.previews||[]).map(p=>p.idx+p.status),
-    Object.entries(renders()).map(([k,v])=>k+v.status),[...S.sel],P.cur,thumbVer]);
+    Object.entries(renders()).map(([k,v])=>k+v.status+(stale(v)?'s':'')),[...S.sel],P.cur,thumbVer]);
   if(sig===galSig)return;galSig=sig;
   $('#grid').innerHTML=ms.map((m,i)=>{
     const p=(j.previews||[]).find(x=>x.idx===i);
@@ -343,7 +362,7 @@ function updateGallery(){
       <span class="no">${i+1} ${esc(m.emoji||'')}</span>
       <button class="chk ${S.sel.has(i)?'on':''}" data-chk="${i}" aria-label="Выбрать">♥</button>
       <span class="dur">${fmt(m.end-m.start)}</span>
-      ${r&&r.status==='ready'?`<button class="rdy" data-dl="${i}" aria-label="Скачать">⬇</button>`:''}
+      ${r&&r.status==='ready'&&!stale(r)?`<button class="rdy" data-dl="${i}" aria-label="Скачать">⬇</button>`:''}
       ${r&&r.status==='pending'?`<span class="pend"><span class="spin"></span></span>`:''}
     </div>`;
   }).join('');
@@ -391,13 +410,9 @@ function updateAct(){
   bar.hidden=!show;document.body.classList.toggle('hasact',show);
   if(!show)return;
   const idxs=[...S.sel].sort((a,b)=>a-b),rs=renders();
-  const st=idxs.map(i=>(rs[String(i)]||{}).status);
+  const st=idxs.map(i=>{const r=rs[String(i)]||{};return r.status==='ready'&&stale(r)?'stale':r.status});
   if(!idxs.length){b.disabled=true;b.innerHTML='Отметь клипы галочками';b.dataset.m='none'}
-  else if(st.some(s=>s==='pending')){
-    const left=Math.max(0,...idxs.map(i=>(rs[String(i)]||{}).eta_left||0));
-    b.disabled=true;
-    b.innerHTML='<span class="spin"></span> Готовлю… '+(left?etaText(left):'');
-    b.dataset.m='wait'}
+  else if(st.some(s=>s==='pending')){b.disabled=true;b.innerHTML='<span class="spin"></span> Готовлю…';b.dataset.m='wait'}
   else if(st.every(s=>s==='ready')){b.disabled=false;b.innerHTML=`⬇ Скачать выбранные: ${idxs.length}`;b.dataset.m='dl'}
   else if(st.some(s=>s==='error')){b.disabled=false;b.innerHTML=`↻ Повторить: ${idxs.length}`;b.dataset.m='prep'}
   else{b.disabled=false;b.innerHTML=`⚡ Подготовить выбранные: ${idxs.length}`;b.dataset.m='prep'}
@@ -420,12 +435,11 @@ function paint(){
   const j=S.job;
   if(S.up)return busyView('Загружаю файл — не закрывай приложение',S.up.pct,'up');
   if(!j)return home();
-  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan',
-    j.eta_over?'дольше обычного, не закрывай приложение':(j.eta_left>0?etaText(j.eta_left):''));
+  if(j.status==='scanning')return busyView(j.progress||'Сканирую',null,'scan');
   if(j.status==='error')return fail(j.error);
   if(!$('#pbox')){
     $('#v').innerHTML=`<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>
-      <div id="pbox"></div><div class="grid" id="grid"></div><div class="opts" id="opts"></div>`;
+      <div id="pbox"></div><div class="grid" id="grid"></div><div id="sty"></div><div class="opts" id="opts"></div>`;
   }
   const ms=j.moments||[];
   $('#mh').innerHTML=ms.length?`Найдено <span class="hl">моментов: ${ms.length}</span>`:'Ярких моментов нет';
@@ -433,19 +447,43 @@ function paint(){
     $('#ms').textContent = j.error || (
     j.previews_status==='pending' && j.progress ? j.progress :
     ms.length ? 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡'
-              : 'Жду новые видео от тебя ♡');
+              : 'Можно наложить субтитры на всё видео.');
   buildPlayerBox();
   updateGallery();
   updateOpts();
   updateAct();
 }
 function updateOpts(){
+  const full=renders()['-1'];
   $('#opts').innerHTML=`
     <button data-a="subs" class="${S.subs?'on':''}">Субтитры: ${S.subs?'да':'нет'}</button>
     <button data-a="fmt" class="${S.vert?'on':''}">Формат: ${S.vert?'9:16':'исходный'}</button>
+    ${full&&full.status==='ready'&&!stale(full)?'<button data-a="dlfull">⬇ Полное видео</button>':'<button data-a="full">Субтитры на всё видео</button>'}
     <button data-a="reset">Новое видео</button>`;
+  updateSty();
 }
-
+/* ---------- вид субтитров ---------- */
+function subPv(replay){
+  const e=$('#subpv');if(!e)return;
+  if(!S.subs){e.hidden=true;return}
+  const st=S.style,c=COL[st.color];
+  e.hidden=false;
+  e.className='subpv '+st.pos+' a-'+st.anim;
+  e.style.color=c[0];
+  e.innerHTML=`пример <i style="${c[1]?'background:'+c[1]+';color:#fff':''}">субтитров</i>`;
+  if(replay){e.style.animation='none';void e.offsetWidth;e.style.animation=''}
+}
+function updateSty(replay){
+  const el=$('#sty');if(!el)return;
+  if(!S.subs){el.innerHTML='';subPv(false);return}
+  const st=S.style;
+  el.innerHTML=`<div class="card"><b>Вид субтитров</b>
+    <div class="lbl">Положение</div><div class="chips">${chips('spos',Object.entries(POS),st.pos)}</div>
+    <div class="lbl">Цвет</div><div class="chips">${swatches(st.color)}</div>
+    <div class="lbl">Анимация</div><div class="chips">${chips('sanim',Object.entries(ANI),st.anim)}</div></div>`;
+  subPv(replay);
+}
+const refreshSel=()=>{updateGallery();updateAct()};
 function badge(){
   document.querySelector('nav [data-t=home]').classList.toggle('busy',!!(S.up||busy()));
 }
@@ -473,21 +511,13 @@ async function restore(){
   }catch(e){}
   paint();
 }
-
-function resetJob(){
-  S.seq++;resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
-  document.body.classList.remove('hasact');$('#actbar').hidden=true;home();
-}
-
 async function start(p,b){
   try{const j=await api(p,'POST',b);S.seq++;S.job=j;S.sel.clear();P.jobId=null;resetSay();paint();poll()}
   catch(e){toast(e.message);if(e.status===409)restore()}
 }
 function upload(f){
   S.up={pct:0};resetSay();paint();
-  const x=new XMLHttpRequest();x.open('POST','/api/upload');
-  S.up.xhr=x;
-  x.onabort=()=>{S.up=null;badge();home()};
+  const x=new XMLHttpRequest();x.open('POST','/api/upload?clip='+S.clip);
   x.setRequestHeader('X-Init-Data',initData());
   x.upload.onprogress=e=>{
     if(!e.lengthComputable)return;
@@ -504,7 +534,7 @@ function upload(f){
 }
 async function prep(idx){
   try{
-    S.job=await api(`/jobs/${S.job.id}/prepare`,'POST',{idx,subtitles:S.subs,vertical:S.vert});
+    S.job=await api(`/jobs/${S.job.id}/prepare`,'POST',{idx,subtitles:S.subs,vertical:S.vert,style:S.style});
     S.seq++;paint();poll();
   }catch(e){toast(e.message)}
 }
@@ -547,16 +577,16 @@ document.addEventListener('click',async e=>{
   }
   const b=e.target.closest('[data-a]');if(!b)return;
   const a=b.dataset.a;
-  if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u})}
-  else if(a==='subs'){S.subs=!S.subs;updateOpts()}
-  else if(a==='fmt'){S.vert=!S.vert;updateOpts()}
-  else if(a==='reset')resetJob();
-  else if(a==='cancel'){
-    b.disabled=true;
-    try{await api(`/jobs/${S.job.id}/cancel`,'POST');resetJob()}
-    catch(x){if(x.status===404)resetJob();else{toast(x.message);tick()}}
-  }
-  else if(a==='cancelup'){if(S.up&&S.up.xhr)S.up.xhr.abort()}
+  if(a==='scan'){const u=$('#url').value.trim();if(!u)return toast('Вставь ссылку');start('/scan',{url:u,clip_sec:S.clip})}
+  else if(a==='subs'){S.subs=!S.subs;updateOpts();refreshSel()}
+  else if(a==='fmt'){S.vert=!S.vert;updateOpts();refreshSel()}
+  else if(a==='full')prep(-1);
+  else if(a==='dlfull')downloadOne(-1);
+  else if(a==='clip'){S.clip=+b.dataset.v;saveOpts();$('#clipch').innerHTML=chips('clip',CLIPS,S.clip)}
+  else if(a==='spos'||a==='scol'||a==='sanim'){
+    S.style[{spos:'pos',scol:'color',sanim:'anim'}[a]]=b.dataset.v;saveOpts();updateSty(true);refreshSel()}
+  else if(a==='reset'){resetSay();S.job=null;S.sel.clear();stopPoll();P.jobId=null;P.cur=-1;thumbs.clear();galSig='';
+    document.body.classList.remove('hasact');$('#actbar').hidden=true;home()}
   else if(a==='email'){try{await api('/email','POST',{email:$('#email').value});toast('Email сохранён')}catch(x){toast(x.message)}}
   else if(a==='pay'){try{const d=await api('/pay','POST',{sub_id:b.dataset.id});
     b.dataset.a='link';b.dataset.url=d.url;b.textContent='Перейти к оплате'}catch(x){toast(x.message)}}
@@ -566,7 +596,7 @@ $('#big').onclick=async()=>{
   const m=$('#big').dataset.m,idxs=[...S.sel].sort((a,b)=>a-b);
   if(m==='prep'){
     for(const i of idxs){
-      try{S.job=await api(`/jobs/${S.job.id}/prepare`,'POST',{idx:i,subtitles:S.subs,vertical:S.vert})}
+      try{S.job=await api(`/jobs/${S.job.id}/prepare`,'POST',{idx:i,subtitles:S.subs,vertical:S.vert,style:S.style})}
       catch(e){toast(e.message);break}
     }
     S.seq++;paint();poll();

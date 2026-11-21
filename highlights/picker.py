@@ -7,7 +7,7 @@ MIN_CLIP, MAX_CLIP = 10.0, 60.0
 MIN_SCORE = 0.10
 
 
-def pick(S, dur, count):
+def pick(S, dur, count, clip_sec=0):
     """Выбрать top-k моментов из кривой интереса S.
 
     Возвращает список dict: {"start", "end", "peak"}.
@@ -37,6 +37,10 @@ def pick(S, dur, count):
         if end - start > MAX_CLIP:
             start = max(0.0, i * 0.5 - 0.4 * MAX_CLIP)
             end = min(dur, start + MAX_CLIP)
+        if clip_sec:                      # длина задана: пик в первой трети клипа
+            start = max(0.0, i * 0.5 - 0.35 * clip_sec)
+            end = min(dur, start + clip_sec)
+            start = max(0.0, end - clip_sec)
         lo = max(0, int(start / 0.5) - 4)
         hi = min(n, int(end / 0.5) + 5)
         S[lo:hi] = -1.0

@@ -2,11 +2,9 @@
 import asyncio
 import re
 import traceback
-import time
 
 from .errors import ApiError
 from .jobs import FULL_VIDEO, rm
-from .eta import eta
 
 _BAD_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
@@ -29,49 +27,38 @@ def full_name(title: str) -> str:
 
 
 class RenderService:
-    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int, slots: int = 2):
+    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int):
         self._renderer = renderer
         self._ffmpeg = ffmpeg
         self._billing = billing
         self._max_full_sec = max_full_sec
-        self._slots = asyncio.Semaphore(slots)
-        self._slots_n = slots
-        self._ahead = 0 
+        self._slots = asyncio.Semaphore(1)
 
-    async def run(self, job, idx: int, subs: bool, vertical: bool):
-        extra: list = []
-        key = "full" if idx == FULL_VIDEO else "clip"
-        sec = job.duration if idx == FULL_VIDEO else job.moments[idx]["end"] - job.moments[idx]["start"]
-        own = eta.estimate(key, sec)
-        wait = (self._ahead / self._slots_n) * own        # грубо: ждём предыдущих
-        job.renders[idx] = {"status": "pending", "eta": own + wait, "eta_ts": time.time()}
-        self._ahead += 1
+    async def run(self, job, idx: int, subs: bool, vertical: bool, style=None, opts=None):
+        extra: list = []      # файлы, которые удаляются вместе с рендером
         try:
             async with self._slots:
-                t0 = time.time()
                 await self._charge_once(job)
                 if idx == FULL_VIDEO:
-                    job.renders[idx] = await self._full(job, vertical, extra)
+                    res = await self._full(job, vertical, extra, style)
                 else:
-                    job.renders[idx] = await self._clip(job, idx, subs, vertical, extra)
-                eta.record(key, sec, time.time() - t0)
+                    res = await self._clip(job, idx, subs, vertical, extra, style)
+            job.renders[idx] = {**res, "opts": opts}
             job.progress = ""
         except ApiError as e:
             rm(*extra)
-            job.renders[idx] = {"status": "error", "error": e.msg}
+            job.renders[idx] = {"status": "error", "error": e.msg, "opts": opts}
         except Exception as e:
             traceback.print_exc()
             rm(*extra)
-            job.renders[idx] = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:120]}"}
-        finally:
-            self._ahead -= 1
+            job.renders[idx] = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:120]}", "opts": opts}
 
     async def _charge_once(self, job):
         if not job.charged:
             job.premium = await self._billing.charge(job.user_id, job.chat_id)
             job.charged = True
 
-    async def _clip(self, job, idx, subs, vertical, extra) -> dict:
+    async def _clip(self, job, idx, subs, vertical, extra, style=None) -> dict:
         m = job.moments[idx]
         job.progress = f"Клип {idx + 1}"
         clip = await job.source.cut(m["start"], m["end"], f"downloads/clip_{job.id}_{idx}.mp4")
@@ -79,7 +66,7 @@ class RenderService:
         final = clip
         if subs:
             res = await asyncio.to_thread(
-                self._renderer.render, clip, premium=job.premium, vertical=vertical)
+                self._renderer.render, clip, premium=job.premium, vertical=vertical, style=style)
             final = res.video_path
             if res.srt_path:
                 extra.append(res.srt_path)
@@ -89,7 +76,7 @@ class RenderService:
         return {"status": "ready", "path": final,
                 "name": clip_name(job.title, idx + 1), "extra": extra}
 
-    async def _full(self, job, vertical, extra) -> dict:
+    async def _full(self, job, vertical, extra, style=None) -> dict:
         if job.duration > self._max_full_sec:
             raise ApiError(f"Видео длиннее {self._max_full_sec // 60} минут — только хайлайты")
         job.progress = "Готовлю полное видео"
@@ -98,7 +85,7 @@ class RenderService:
             extra.append(src)
         job.progress = "Субтитры на всё видео"
         res = await asyncio.to_thread(
-            self._renderer.render, src, premium=job.premium, vertical=vertical)
+            self._renderer.render, src, premium=job.premium, vertical=vertical, style=style)
         if res.srt_path:
             extra.append(res.srt_path)
         return {"status": "ready", "path": res.video_path,

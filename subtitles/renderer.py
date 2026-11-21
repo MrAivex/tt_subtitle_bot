@@ -23,14 +23,14 @@ class SubtitleRenderer:
         self._breaker = breaker
         self._ass = ass
 
-    def render(self, src, *, premium: bool, vertical: bool) -> RenderResult:
+    def render(self, src, *, premium: bool, vertical: bool, style=None) -> RenderResult:
         v = Path(src).resolve()
         out = v.with_name(f"{v.stem}_subtitled.mp4")
         wav = v.with_name(f"{v.stem}.wav")
         ass_path = v.with_name(f"{v.stem}.ass")
         try:
             with timed("clip: ffmpeg → wav"):
-                self._ff.extract_wav_speech(v, wav)
+                self._ff.extract_wav(v, wav)
 
             words = self._transcriber.words(wav)
             if not words:
@@ -38,7 +38,7 @@ class SubtitleRenderer:
 
             w, h, box = self._frame(v, vertical)          # размер кадра ПОСЛЕ обрезки
             lines = self._breaker.split(words, w, h)
-            ass_text = self._ass.build(lines, w, h, self._ff.duration(v), watermark=not premium)
+            ass_text = self._ass.build(lines, w, h, self._ff.duration(v), watermark=not premium, style=style)
             ass_path.write_text(ass_text, encoding="utf-8")
 
             with timed("clip: рендер ffmpeg"):

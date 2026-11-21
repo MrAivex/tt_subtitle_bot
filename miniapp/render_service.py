@@ -27,12 +27,12 @@ def full_name(title: str) -> str:
 
 
 class RenderService:
-    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int):
+    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int, slots: int = 1):
         self._renderer = renderer
         self._ffmpeg = ffmpeg
         self._billing = billing
         self._max_full_sec = max_full_sec
-        self._slots = asyncio.Semaphore(1)
+        self._slots = asyncio.Semaphore(slots)
 
     async def run(self, job, idx: int, subs: bool, vertical: bool, style=None, opts=None):
         extra: list = []      # файлы, которые удаляются вместе с рендером

@@ -44,12 +44,17 @@ USE_ASR = os.getenv("HIGHLIGHT_ASR", "1") != "0"
 FREE_PERIOD = os.getenv("FREE_PERIOD", "1") != "0"
 
 
-# Whisper: одна модель medium на всё
+# Whisper для субтитров (качество важно)
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
-WHISPER_THREADS = int(os.getenv("WHISPER_THREADS", "2"))   # потоков на одно распознавание
-WHISPER_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))   # распознаваний одновременно
+WHISPER_THREADS = int(os.getenv("WHISPER_THREADS", "2"))
+WHISPER_WORKERS = int(os.getenv("WHISPER_WORKERS", "2"))
 RENDER_SLOTS = int(os.getenv("RENDER_SLOTS", "2"))
-HL_ASR_SEC = 30.0 
+
+# Whisper для поиска хайлайтов (нужны только слова-маркеры)
+HL_WHISPER_MODEL = os.getenv("HL_WHISPER_MODEL", "small")
+HL_WHISPER_THREADS = int(os.getenv("HL_WHISPER_THREADS", "1"))
+HL_WHISPER_WORKERS = int(os.getenv("HL_WHISPER_WORKERS", "3"))
+HL_ASR_SEC = 45.0          # как было изначально, чтобы не терять слова в конце момента
 
 WHISPER_BEAM = int(os.getenv("WHISPER_BEAM", "5"))   # 5 = максимум качества, 3 = компромисс, 1 = быстро
 WHISPER_PROMPT = os.getenv(

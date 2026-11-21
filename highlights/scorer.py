@@ -4,7 +4,7 @@ import logging
 import wave
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
-from config import USE_ASR, HL_ASR_SEC, WHISPER_WORKERS
+from config import USE_ASR, HL_ASR_SEC, HL_WHISPER_WORKERS
 
 import numpy as np
 
@@ -52,7 +52,7 @@ def enrich(candidates, curves, feats, wav_path, asr=None, stop=None):
                 log.warning(f"[HIGHLIGHTS] ASR не сработал: {type(e).__name__}: {e}")
         c["score"] = float(combine(c["cats"]))
 
-    with ThreadPoolExecutor(max_workers=WHISPER_WORKERS) as ex:
+    with ThreadPoolExecutor(max_workers=HL_WHISPER_WORKERS) as ex:
         list(ex.map(one, candidates))
 
 

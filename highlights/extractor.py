@@ -82,7 +82,8 @@ class Yamnet:
                 rd = csv.reader(f)
                 next(rd)
                 names = [row[2] for row in rd]
-            return cls(Interp(model_path=YAMNET_MODEL, num_threads=2), names)
+            return cls(Interp(model_path=YAMNET_MODEL,
+                              num_threads=int(os.getenv("YAMNET_THREADS", "4"))), names)
         except Exception as e:
             log.warning(f"[YAMNET] не удалось загрузить: {type(e).__name__}: {e}")
             return None

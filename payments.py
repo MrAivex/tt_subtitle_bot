@@ -19,7 +19,7 @@ Configuration.secret_key = os.getenv("YOOKASSA_SECRET_KEY")
 
 Configuration.timeout = 60   # секунд
 
-YOOKASSA_PROXY = os.getenv("YOOKASSA_PROXY") 
+YOOKASSA_PROXY = os.getenv("YOOKASSA_PROXY")
 
 if YOOKASSA_PROXY:
     _original_request = requests.Session.request
@@ -38,25 +38,31 @@ def _patched_session_init(self, *args, **kwargs):
     self.mount("http://", HTTPAdapter(max_retries=retry))
 requests.Session.__init__ = _patched_session_init
 
-async def create_payment(user_id: int, sub_id: str, email: str, platform: str = "tg") -> tuple[str, str]:
-    return await asyncio.to_thread(_create_payment_sync, user_id, sub_id, email, platform)
+async def create_payment(user_id: int, sub_id: str, email: str, platform: str = "tg",
+                         return_url: str = None) -> tuple[str, str]:
+    """return_url — куда вернуть после оплаты (для сайта передаём WEB_PUBLIC_URL,
+    по умолчанию PAYMENT_RETURN_URL, как раньше)."""
+    return await asyncio.to_thread(_create_payment_sync, user_id, sub_id, email,
+                                   platform, return_url)
 
 
-def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = "tg") -> tuple[str, str]:
+def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = "tg",
+                         return_url: str = None) -> tuple[str, str]:
     from subscriptions import get_subscription
     sub = get_subscription(sub_id)
     if sub["price"] == 0:
         raise ValueError("Нельзя создать платёж для бесплатной подписки")
 
     idempotency_key = str(uuid.uuid4())
-    logger.info(f"[PAYMENT] Создаю платёж: user={user_id}, sub={sub_id}, idem={idempotency_key}")
+    logger.info(f"[PAYMENT] Создаю платёж: user={user_id}, sub={sub_id}, "
+                f"platform={platform}, idem={idempotency_key}")
     try:
         payment = Payment.create({
                 "amount": {
                     "value": str(sub["price"]) + ".00",
                     "currency": "RUB"
                 },
-                "confirmation": {"type": "redirect", "return_url": PAYMENT_RETURN_URL},
+                "confirmation": {"type": "redirect", "return_url": return_url or PAYMENT_RETURN_URL},
                 "capture": True,
                 "description": f"Подписка {sub['name']}",
                 "metadata": {
@@ -81,7 +87,7 @@ def _create_payment_sync(user_id: int, sub_id: str, email: str, platform: str = 
                     ]
                 }
             }, idempotency_key)
-        
+
         logger.info(f"[PAYMENT] Успех: {payment.id}")
         return payment.id, payment.confirmation.confirmation_url
 

@@ -99,3 +99,19 @@ if _tg_admin_str:
 # Длинные стримы в TG — ссылками (YouTube/Twitch/TikTok/...), их качает сервер через yt-dlp.
 TG_DOWNLOAD_LIMIT = 20 * 1024 * 1024
 TG_UPLOAD_LIMIT = 50 * 1024 * 1024
+
+
+# ============================================================
+# Единый веб-миниapp (web_main.py — отдельный процесс)
+# ============================================================
+# «Сайт»: то же приложение, что в MAX/TG, но открывается и как отдельный сайт
+# с логином, и как миниapp Telegram/MAX. Все платформы — одна база users_web.
+WEB_PORT = int(os.getenv("WEB_PORT", "8084"))
+# Публичный адрес сайта (https обязателен для миниapp-кнопок), например https://app.subtitle-bot.ru/
+WEB_PUBLIC_URL = os.getenv("WEB_PUBLIC_URL", "")
+# Секрет для сессий сайта и подписи медиа-ссылок. Сгенерировать: openssl rand -hex 24.
+# Пусто — берётся TG_BOT_TOKEN (стабилен между перезапусками).
+WEB_SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "")
+WEB_SESSION_TTL = int(os.getenv("WEB_SESSION_TTL", str(30 * 24 * 3600)))   # 30 дней
+# Кнопка «Открыть приложение» в TG-боте: адрес сайта (https обязателен)
+TG_WEBAPP_URL = os.getenv("TG_WEBAPP_URL", WEB_PUBLIC_URL)

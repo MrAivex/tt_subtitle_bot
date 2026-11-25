@@ -43,7 +43,7 @@ async def handle_pay(chat_id: int, user_id: int, sub_id: str):
     async with async_session_max() as session:
         user = await get_or_create_user(session, user_id, chat_id)
     if not user.email:
-        await bot.send_message(chat_id, await bot.send_message(chat_id, "✉️ Сначала сохрани email в профиле мини-приложения — он нужен для чека."))
+        await bot.send_message(chat_id, "✉️ Сначала сохрани email в профиле мини-приложения — он нужен для чека.")
         return
     await bot.send_message(chat_id, "⏳ Создаю платёж, подожди...")
     try:

@@ -1,0 +1,51 @@
+// static/js/views/results_view.js — найденные моменты: плеер, галерея, опции, нижняя кнопка.
+import { View } from './view.js';
+import { $ } from '../utils.js';
+
+const HINT = 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡';
+const EMPTY = 'Жду новые видео от тебя ♡';
+
+export class ResultsView extends View {
+  /** @param {object} parts — { player, gallery, actionBar }: готовые компоненты, которые экран собирает вместе */
+  constructor(ctx, { player, gallery, actionBar }) {
+    super(ctx);
+    this._player = player;
+    this._gallery = gallery;
+    this._actionBar = actionBar;
+  }
+
+  render() {
+    const j = this.ctx.state.job;
+    if (!$('#pbox')) this._scaffold();
+
+    const ms = j.moments || [];
+    $('#mh').innerHTML = ms.length ? `Найдено <span class="hl">моментов: ${ms.length}</span>` : 'Ярких моментов нет';
+
+    const tt = $('#tt');
+    tt.hidden = !(ms.length && j.title);
+    if (j.title) tt.textContent = '🎞 «' + j.title + '»';
+
+    $('#ms').textContent = j.error || (
+      j.previews_status === 'pending' && j.progress ? j.progress : ms.length ? HINT : EMPTY
+    );
+
+    this._player.ensure();
+    this._gallery.update();
+    this.renderOptions();
+    this._actionBar.update();
+  }
+
+  /** Кнопки «Субтитры / Формат / Новое видео». */
+  renderOptions() {
+    const { state } = this.ctx;
+    $('#opts').innerHTML = `
+    <button data-a="subs" class="${state.subs ? 'on' : ''}">Субтитры: ${state.subs ? 'да' : 'нет'}</button>
+    <button data-a="fmt" class="${state.vert ? 'on' : ''}">Формат: ${state.vert ? '9:16' : 'исходный'}</button>
+    <button data-a="reset">Новое видео</button>`;
+  }
+
+  _scaffold() {
+    this.root.innerHTML = `<h1 id="mh"></h1><p class="sub" id="ms"></p><div class="name" id="tt" hidden></div>
+      <div id="pbox"></div><div class="grid" id="grid"></div><div class="opts" id="opts"></div>`;
+  }
+}

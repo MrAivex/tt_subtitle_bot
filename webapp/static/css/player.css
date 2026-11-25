@@ -1,0 +1,19 @@
+/* ---------- плеер ---------- */
+.player{position:relative;border-radius:22px;overflow:hidden;background:#000;border:3px solid var(--line);box-shadow:4px 4px 0 var(--sh)}
+.player video{display:block;width:100%;aspect-ratio:16/9;background:#000}
+.center{position:absolute;left:0;right:0;top:0;bottom:0;margin:auto;width:72px;height:72px;border-radius:50%;
+  background:var(--pink);border:3px solid #2a1f45;color:#fff;font-size:28px;padding:0 0 0 6px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #2a1f45}
+.roundtr{position:absolute;top:10px;right:10px;width:40px;height:40px;border-radius:50%;background:#fff;
+  border:3px solid #2a1f45;color:#2a1f45;font-size:17px;padding:0;margin:0;box-shadow:0 3px 0 #2a1f45;display:flex;align-items:center;justify-content:center}
+.ptag{position:absolute;top:10px;left:10px;background:var(--sun);color:#2a1f45;font:900 12px var(--h);padding:4px 10px;border-radius:999px;border:2.5px solid #2a1f45}
+.pload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(26,20,48,.72);color:#fff;font-size:14px;font-weight:800}
+.pload[hidden]{display:none}
+.pload .spin{border-color:rgba(255,255,255,.4);border-top-color:#fff}
+.pbar{position:absolute;left:0;right:0;bottom:0;padding:6px 12px 10px;background:linear-gradient(transparent,rgba(26,20,48,.8))}
+.ptime{color:#fff;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;margin:0 2px 2px 0;font-weight:800}
+.track{position:relative;height:24px;cursor:pointer;touch-action:none}
+.track .line{position:absolute;left:0;right:0;top:9px;height:6px;background:rgba(255,255,255,.4);border-radius:6px}
+.track .fill{position:absolute;left:0;top:9px;height:6px;background:var(--pink);border-radius:6px;width:0}
+.track .knob{position:absolute;top:4px;left:0;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--sun);border:2.5px solid #2a1f45}
+.meta{margin:14px 2px 0;font-size:14.5px}
+.meta b{font:900 15px var(--h)}.meta small{display:block;color:var(--mute);font-weight:700;margin-top:2px}

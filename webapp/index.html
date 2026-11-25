@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Хайлайты</title>
+<!-- SDK обоих мессенджеров: вне их вебвью скрипты безвредны, просто ничего не дают -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" rel="stylesheet">
+<!-- Порядок важен: это тот же порядок правил, что был в одном <style>. -->
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/mascot.css">
+<link rel="stylesheet" href="/static/css/text.css">
+<link rel="stylesheet" href="/static/css/controls.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/nav.css">
+<link rel="stylesheet" href="/static/css/player.css">
+<link rel="stylesheet" href="/static/css/gallery.css">
+<link rel="stylesheet" href="/static/css/actionbar.css">
+<link rel="stylesheet" href="/static/css/a11y.css">
+<link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+<span class="sp">✦</span><span class="sp">♡</span><span class="sp">✧</span><span class="sp">✦</span><span class="sp">♡</span>
+<main id="v"></main>
+<div id="actbar" hidden><button class="pri" id="big"></button></div>
+<div id="toast" role="status"></div>
+<nav hidden><button data-t="home" class="on">🎬 Видео</button><button data-t="profile">💖 Профиль</button></nav>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

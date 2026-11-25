@@ -2,21 +2,19 @@
 
 Whisper здесь не грузится: распознавание делает общий asr_service.py
 (в .env задан ASR_URL). Пайплайн — тот же, что у мини-приложения MAX.
+Биллинг — единая база users_web (таблицы создаёт web-процесс или этот).
 """
 import asyncio
 import logging
 import os
 
 from aiohttp import web
-from apscheduler.triggers.cron import CronTrigger
 
-from database_max import init_db_max
-from config import (TG_WEBHOOK_URL, TG_WEBHOOK_PATH, TG_PORT, TG_WEBHOOK_SECRET,
-                    MOSCOW_TZ)
-from app import scheduler, transcriber, asr_fast
+from database_web import init_db_web
+from config import (TG_WEBHOOK_URL, TG_WEBHOOK_PATH, TG_PORT, TG_WEBHOOK_SECRET)
+from app import transcriber, asr_fast
 from tg_handlers import bot
 from tg_webhook import handle_tg_webhook
-from services_tg import reset_all_daily_limits_tg, check_expired_subscriptions_tg
 
 # ============================================================
 # Логирование (как в main.py)
@@ -56,7 +54,9 @@ async def warmup_asr():
 
 
 async def main():
-    await init_db_max()
+    # таблицы единой базы: users_web, identities_web, link_codes_web
+    # (сброс лимитов и проверку подписок делает web-процесс, здесь только доступ)
+    await init_db_web()
     os.makedirs("downloads", exist_ok=True)
 
     # 1. HTTP-сервер
@@ -80,14 +80,8 @@ async def main():
     # 3. Проверка ASR в фоне
     asyncio.create_task(warmup_asr())
 
-    # 4. Планировщик: только users_tg (users_max обслуживает MAX-процесс)
-    scheduler.add_job(reset_all_daily_limits_tg,
-                      CronTrigger(hour=0, minute=30, timezone=MOSCOW_TZ),
-                      id="daily_reset_tg", replace_existing=True)
-    scheduler.add_job(check_expired_subscriptions_tg,
-                      CronTrigger(hour=1, minute=0, timezone=MOSCOW_TZ),
-                      id="check_expired_tg", replace_existing=True)
-    scheduler.start()
+    # Планировщик не нужен: единая база обслуживается web-процессом
+    # (reset_all_daily_limits_web / check_expired_subscriptions_web — в web_main.py).
 
     try:
         while True:

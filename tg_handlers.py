@@ -4,6 +4,10 @@
 меняется только «фронт»: вместо веб-интерфейса — сообщения и inline-кнопки.
 После сканирования ScanService зовет previews.run(job) — вместо превью шлём
 в чат список моментов с кнопками (TgMomentsNotifier).
+
+Биллинг — единая база users_web (web_billing.UnifiedBilling): TG-пользователь
+резолвится через services_web.resolve_identity, и аккаунт в чате совпадает
+с аккаунтом в миниapp-приложении (кнопка «Открыть приложение» в /start).
 """
 import asyncio
 import html
@@ -14,9 +18,9 @@ import uuid
 from app import analyzer, renderer, ffmpeg
 from config import (TG_TOKEN, MAX_HIGHLIGHTS, MAX_FULL_VIDEO_SEC, RENDER_SLOTS,
                     MAX_CLIPS_PER_REQUEST, TG_DOWNLOAD_LIMIT, TG_UPLOAD_LIMIT,
-                    FREE_PERIOD, TG_ADMIN_IDS)
+                    FREE_PERIOD, TG_ADMIN_IDS, TG_WEBAPP_URL)
 from tg_bot_client import TgBot
-from tg_billing import TgBilling
+from web_billing import UnifiedBilling
 from sources import extract_url, detect_platform
 from sources.file_source import FileSource
 from sources.link_source import LinkSource
@@ -25,13 +29,12 @@ from miniapp.scan_service import ScanService
 from miniapp.render_service import RenderService
 from miniapp.tasks import spawn
 from miniapp.errors import ApiError
-from database_max import async_session_max
-from services_tg import get_or_create_user_tg, get_users_stats_tg
+from services_web import resolve_identity, get_users_stats_web
 
-VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
+VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ").webm")
 
 bot = TgBot(TG_TOKEN)
-billing = TgBilling()
+billing = UnifiedBilling()
 jobs = JobStore()
 
 
@@ -128,11 +131,11 @@ async def _status(job, text: str):
 # Запуск сканирования
 # ============================================================
 
-async def _start_job(chat_id: int, user_id: int, source) -> None:
+async def _start_job(chat_id: int, uid: int, source) -> None:
     try:
-        await billing.ensure_can_start(user_id, chat_id)
-        with jobs.slot(user_id):
-            job = jobs.add(Job(user_id, chat_id, source))
+        await billing.ensure_can_start(uid)
+        with jobs.slot(uid):
+            job = jobs.add(Job(uid, chat_id, source))
     except PermissionError as e:
         await bot.send_message(chat_id, f"⛔ {e}")
         return
@@ -177,7 +180,7 @@ def _pick_video(msg: dict):
     return None
 
 
-async def _start_file_job(chat_id: int, user_id: int, v: dict) -> None:
+async def _start_file_job(chat_id: int, uid: int, v: dict) -> None:
     size = v.get("file_size") or 0
     name = v.get("file_name") or "video.mp4"
     stem, ext = os.path.splitext(name)
@@ -192,20 +195,20 @@ async def _start_file_job(chat_id: int, user_id: int, v: dict) -> None:
             "по ссылке ограничений нет.")
         return
     try:
-        await billing.ensure_can_start(user_id, chat_id)
+        await billing.ensure_can_start(uid)
     except PermissionError as e:
         await bot.send_message(chat_id, f"⛔ {e}")
         return
 
     mid = await bot.send_message(chat_id, "⏬ Скачиваю видео…")
-    path = f"downloads/tg_{user_id}_{uuid.uuid4().hex[:10]}{ext.lower()}"
+    path = f"downloads/tg_{uid}_{uuid.uuid4().hex[:10]}{ext.lower()}"
     try:
         # слот держим на всё время скачивания: две параллельные загрузки не пройдут
-        with jobs.slot(user_id):
+        with jobs.slot(uid):
             got = await bot.download_file(v["file_id"], path)
             if not got:
                 raise RuntimeError("download failed")
-            job = jobs.add(Job(user_id, chat_id, FileSource(path, stem or "video", ffmpeg)))
+            job = jobs.add(Job(uid, chat_id, FileSource(path, stem or "video", ffmpeg)))
     except ApiError as e:
         rm(path)
         await bot.send_message(chat_id, e.msg)
@@ -265,18 +268,28 @@ async def _render_and_send(job, idx: int):
 # Команды
 # ============================================================
 
+def _app_kb() -> dict | None:
+    """Кнопка «Открыть приложение» — запускает сайт как миниapp Telegram.
+    Telegram требует https, поэтому без TG_WEBAPP_URL кнопки нет."""
+    if not TG_WEBAPP_URL or not TG_WEBAPP_URL.startswith("https://"):
+        return None
+    return {"keyboard": [[{"text": "🎬 Открыть приложение",
+                          "web_app": {"url": TG_WEBAPP_URL}}]],
+            "resize_keyboard": True}
+
+
 async def cmd_start(chat_id: int, user_id: int):
-    async with async_session_max() as s:
-        await get_or_create_user_tg(s, user_id, chat_id)
+    # единый пользователь: tg id → users_web (создаётся при первом /start)
+    await resolve_identity("tg", user_id, chat_id=chat_id)
     promo = "\n\n🎁 Пока бот в тестировании — всё бесплатно!" if FREE_PERIOD else ""
-    await bot.send_message(
-        chat_id,
-        "👋 Привет! Я нахожу лучшие моменты в видео и нарезаю клипы с анимированными "
-        "субтитрами.\n\n"
-        "• Пришли <b>ссылку</b> — YouTube, Twitch, TikTok, Google Drive, Яндекс.Диск "
-        "(подходит для длинных стримов)\n"
-        "• Или <b>видеофайл</b> до 20 МБ\n\n"
-        "Сначала покажу найденные моменты списком, потом нарежу выбранные." + promo)
+    kb = _app_kb()
+    text = ("👋 Привет! Я нахожу лучшие моменты в видео и нарезаю клипы с анимированными "
+            "субтитрами.\n\n"
+            "• Жми кнопку ниже — откроется приложение (как в MAX, только в Telegram)\n"
+            "• Или пришли <b>ссылку</b> — YouTube, Twitch, TikTok, Google Drive, Яндекс.Диск "
+            "(подходит для длинных стримов)\n"
+            "• Или <b>видеофайл</b> до 20 МБ — тогда всё прямо в чате" + promo)
+    await bot.send_message(chat_id, text, reply_markup=kb)
 
 
 async def cmd_help(chat_id: int):
@@ -285,21 +298,23 @@ async def cmd_help(chat_id: int):
         "🤖 <b>Справка</b>\n\n"
         "/start — начать\n"
         "/help — это сообщение\n\n"
-        "Пришли ссылку на видео (YouTube, Twitch, TikTok, Google Drive, Яндекс.Диск) "
-        "или видеофайл до 20 МБ.\n"
-        "Бот найдёт лучшие моменты, покажет их списком — жми кнопки, и я нарежу "
-        "клипы с субтитрами (до 3 за раз).")
+        "Есть приложение с превью и галереей — кнопка под этим сообщением (или в /start). "
+        "Можно и по-старинке: пришли ссылку на видео или файл до 20 МБ — всё в чате.\n\n"
+        "Аккаунт один и тот же и в чате, и в приложении; связать его с MAX или сайтом "
+        "можно в профиле приложения — «Код привязки».")
 
 
 async def cmd_stats(chat_id: int, user_id: int):
     if user_id not in TG_ADMIN_IDS:
         await bot.send_message(chat_id, "Недостаточно прав.")
         return
-    total, paid = await get_users_stats_tg()
-    await bot.send_message(chat_id,
-                           f"📊 <b>Статистика TG-бота</b>\n\n"
-                           f"👥 Пользователей: {total}\n"
-                           f"💎 С активной подпиской: {paid}")
+    total, paid, _email, n_max, n_tg, n_site = await get_users_stats_web()
+    await bot.send_message(
+        chat_id,
+        "📊 <b>Статистика (единая база)</b>\n\n"
+        f"👥 Пользователей: {total}\n"
+        f"💎 С активной подпиской: {paid}\n\n"
+        f"Привязки: MAX — {n_max}, Telegram — {n_tg}, сайт — {n_site}")
 
 
 # ============================================================
@@ -324,15 +339,19 @@ async def handle_message(msg: dict):
             await cmd_stats(chat_id, user_id)
             return
 
+        # Всё остальное — от имени единого пользователя (tg id → users_web)
+        user = await resolve_identity("tg", user_id, chat_id=chat_id)
+        uid = user.id
+
         # Ссылка (в тексте или в подписи к видео)
         url = extract_url(text)
         if url and detect_platform(url):
-            await _start_job(chat_id, user_id, LinkSource(url))
+            await _start_job(chat_id, uid, LinkSource(url))
             return
 
         v = _pick_video(msg)
         if v:
-            await _start_file_job(chat_id, user_id, v)
+            await _start_file_job(chat_id, uid, v)
             return
 
         if msg.get("video_note"):
@@ -357,20 +376,24 @@ async def handle_callback_query(cb: dict):
             await bot.answer_callback_query(cb_id)
             return
 
+        # задачи привязаны к единому пользователю, поэтому сначала резолвим tg id
+        user = await resolve_identity("tg", user_id)
+        uid = user.id
+
         if data.startswith("cancel:"):
-            await _on_cancel(cb_id, user_id, data.split(":", 1)[1])
+            await _on_cancel(cb_id, uid, data.split(":", 1)[1])
         elif data.startswith("cut:"):
             _, job_id, idx_s = data.split(":", 2)
-            await _on_cut(cb_id, user_id, job_id, int(idx_s))
+            await _on_cut(cb_id, uid, job_id, int(idx_s))
         else:
             await bot.answer_callback_query(cb_id)
     except Exception:
         traceback.print_exc()
 
 
-async def _on_cancel(cb_id: str, user_id: int, job_id: str):
+async def _on_cancel(cb_id: str, uid: int, job_id: str):
     job = jobs.get_by_id(job_id)
-    if not job or job.user_id != user_id:
+    if not job or job.user_id != uid:
         await bot.answer_callback_query(cb_id, "Задача не найдена")
         return
     if job.status != "scanning" or not job.task or job.task.done():
@@ -382,9 +405,9 @@ async def _on_cancel(cb_id: str, user_id: int, job_id: str):
     await bot.answer_callback_query(cb_id, "Останавливаю…")
 
 
-async def _on_cut(cb_id: str, user_id: int, job_id: str, idx: int):
+async def _on_cut(cb_id: str, uid: int, job_id: str, idx: int):
     job = jobs.get_by_id(job_id)
-    if not job or job.user_id != user_id:
+    if not job or job.user_id != uid:
         await bot.answer_callback_query(cb_id, "Задача устарела — пришли видео заново")
         return
     if job.status != "ready":

@@ -5,6 +5,10 @@
   sendVideo (multipart, лимит Bot API — 50 МБ)
   getFile + скачивание (лимит Bot API — 20 МБ)
   setWebhook (с secret_token — проверка, что апдейты шлёт сам Telegram)
+
+Если api.telegram.org недоступен напрямую (например, в РФ), задайте в .env:
+  TG_API_PROXY=socks5h://user:pass@host:port   (или http://host:port)
+Для socks нужен пакет aiohttp-socks (есть в requirements.txt).
 """
 import asyncio
 import os
@@ -18,13 +22,25 @@ class TgBot:
         self.base_url = f"https://api.telegram.org/bot{token}"
         self.file_url = f"https://api.telegram.org/file/bot{token}"
 
+    def _session(self) -> aiohttp.ClientSession:
+        """Сессия через прокси, если задан TG_API_PROXY; иначе — напрямую."""
+        proxy = os.getenv("TG_API_PROXY", "")
+        if proxy:
+            try:
+                from aiohttp_socks import ProxyConnector
+                return aiohttp.ClientSession(connector=ProxyConnector.from_url(proxy))
+            except ImportError:
+                print("[TG] TG_API_PROXY задан, но пакет aiohttp-socks не установлен — иду напрямую",
+                      flush=True)
+        return aiohttp.ClientSession()
+
     # ---------- базовые вызовы ----------
 
     async def api(self, method: str, payload: dict):
         """POST JSON → result или None. 429 (flood control) пережидаем."""
         for attempt in range(3):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with self._session() as session:
                     async with session.post(f"{self.base_url}/{method}", json=payload) as resp:
                         if resp.status == 200:
                             return await resp.json()
@@ -85,7 +101,7 @@ class TgBot:
             return None
         url = f"{self.file_url}/{info['file_path']}"
         try:
-            async with aiohttp.ClientSession() as session:
+            async with self._session() as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         print(f"[TG download_file] {resp.status}: {(await resp.text())[:200]}", flush=True)
@@ -103,7 +119,7 @@ class TgBot:
         """Видео multipart'ом (лимит Bot API — 50 МБ). Возвращает message_id."""
         for attempt in range(3):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with self._session() as session:
                     with open(video_path, "rb") as f:
                         form = aiohttp.FormData()
                         form.add_field("video", f, filename=os.path.basename(video_path),

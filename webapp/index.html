@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Хайлайты</title>
-<!-- SDK обоих мессенджеров: вне их вебвью скрипты безвредны, просто ничего не дают -->
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://st.max.ru/js/max-web-app.js"></script>
+<!-- SDK обоих мессенджеров: вне их вебвью скрипты безвредны, просто ничего не дают.
+     defer — не блокируют отрисовку страницы, порядок исполнения сохраняется. -->
+<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="https://st.max.ru/js/max-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" rel="stylesheet">
 <!-- Порядок важен: это тот же порядок правил, что был в одном <style>. -->

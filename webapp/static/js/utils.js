@@ -5,7 +5,7 @@ export const $ = (selector) => document.querySelector(selector);
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 
 /** Экранирование для вставки в innerHTML. */
-export const esc = (s) => String(s).replace(/[&<>" ]/g, (c) => ESC_MAP[c]);
+export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ESC_MAP[c]);
 
 /** Секунды → «м:сс» или «ч:мм:сс». */
 export function fmt(t) {

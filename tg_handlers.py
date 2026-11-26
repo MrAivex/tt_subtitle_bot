@@ -270,26 +270,36 @@ async def _render_and_send(job, idx: int):
 
 def _app_kb() -> dict | None:
     """Кнопка «Открыть приложение» — запускает сайт как миниapp Telegram.
+    Инлайн-кнопка под сообщением: клавиатура чата остаётся свободной
+    (старая версия ставила кнопку в клавиатуру — она заменяла собой кнопки
+    ввода, что было неудобно).
     Telegram требует https, поэтому без TG_WEBAPP_URL кнопки нет."""
     if not TG_WEBAPP_URL or not TG_WEBAPP_URL.startswith("https://"):
         return None
-    return {"keyboard": [[{"text": "🎬 Открыть приложение",
-                          "web_app": {"url": TG_WEBAPP_URL}}]],
-            "resize_keyboard": True}
+    return {"inline_keyboard": [[{"text": "🎬 Открыть приложение",
+                                  "web_app": {"url": TG_WEBAPP_URL}}]]}
 
 
 async def cmd_start(chat_id: int, user_id: int):
     # единый пользователь: tg id → users_web (создаётся при первом /start)
     await resolve_identity("tg", user_id, chat_id=chat_id)
     promo = "\n\n🎁 Пока бот в тестировании — всё бесплатно!" if FREE_PERIOD else ""
-    kb = _app_kb()
     text = ("👋 Привет! Я нахожу лучшие моменты в видео и нарезаю клипы с анимированными "
             "субтитрами.\n\n"
-            "• Жми кнопку ниже — откроется приложение (как в MAX, только в Telegram)\n"
+            "• Кнопка «Открыть приложение» под сообщением — там превью и галерея, "
+            "вход без пароля\n"
             "• Или пришли <b>ссылку</b> — YouTube, Twitch, TikTok, Google Drive, Яндекс.Диск "
             "(подходит для длинных стримов)\n"
             "• Или <b>видеофайл</b> до 20 МБ — тогда всё прямо в чате" + promo)
-    await bot.send_message(chat_id, text, reply_markup=kb)
+    kb = _app_kb()
+    if kb:
+        # убираем клавиатуру, которую могла оставить старая версия бота,
+        # и шлём приложение отдельной инлайн-кнопкой
+        await bot.send_message(chat_id, text, reply_markup={"remove_keyboard": True})
+        await bot.send_message(chat_id, "Приложение (вход автоматический):",
+                               reply_markup=kb)
+    else:
+        await bot.send_message(chat_id, text)
 
 
 async def cmd_help(chat_id: int):
@@ -301,7 +311,8 @@ async def cmd_help(chat_id: int):
         "Есть приложение с превью и галереей — кнопка под этим сообщением (или в /start). "
         "Можно и по-старинке: пришли ссылку на видео или файл до 20 МБ — всё в чате.\n\n"
         "Аккаунт один и тот же и в чате, и в приложении; связать его с MAX или сайтом "
-        "можно в профиле приложения — «Код привязки».")
+        "можно в профиле приложения — «Код привязки».",
+        reply_markup=_app_kb())
 
 
 async def cmd_stats(chat_id: int, user_id: int):

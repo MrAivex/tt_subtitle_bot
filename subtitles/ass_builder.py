@@ -1,5 +1,11 @@
 # subtitles/ass_builder.py
-"""Генерация ASS: слова вылетают снизу вверх, активное слово подсвечено плашкой."""
+"""Генерация ASS: слова вылетают снизу вверх, активное слово подсвечено плашкой.
+
+Два режима: animated=True — караоке-вылет слов с бегущей плашкой (как было);
+animated=False — статичные строки на плашке (без анимации). Цвет плашки
+(параметр color, «#RRGGBB») настраивается пользователем в приложении.
+"""
+import re
 from dataclasses import dataclass
 from typing import Callable, List
 
@@ -10,6 +16,20 @@ EASE_STEPS = 5        # на сколько линейных отрезков р
 FADE_K = 1.7          # во сколько раз проявление быстрее движения
 LINE_TAIL = 0.25      # сколько строка висит после последнего слова
 LINE_FADE_OUT = 0.15  # плавное исчезновение строки
+STATIC_FADE_IN = 0.15 # статичный режим: проявление строки
+
+# ---- цвет плашки ----
+DEFAULT_BOX_COLOR = "#9D4EDD"      # фиолетовая, как всегда
+_HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
+
+
+def ass_box_color(hex_color: str) -> str:
+    """'#RRGGBB' → '&H00BBGGRR'. ASS хранит цвета BGR с альфой впереди."""
+    h = (hex_color or "").lstrip("#")
+    if not _HEX_RE.match("#" + h):          # чужой формат — дефолт
+        h = DEFAULT_BOX_COLOR.lstrip("#")
+    r, g, b = h[0:2], h[2:4], h[4:6]
+    return f"&H00{b}{g}{r}"
 
 
 def _ease_out(p: float) -> float:
@@ -60,12 +80,13 @@ class AssBuilder:
 
     # ---------- публичный API ----------
     def build(self, lines: List, video_w: int, video_h: int, duration: float,
-              watermark: bool) -> str:
+              watermark: bool, color: str = None, animated: bool = True) -> str:
         lay = self._layout(video_w, video_h)
-        out = self._header(lay)
+        out = self._header(lay, ass_box_color(color or DEFAULT_BOX_COLOR))
         for li, line in enumerate(lines):
             nxt = lines[li + 1] if li + 1 < len(lines) else None
-            out += self._line_events(lay, line, nxt)
+            out += (self._line_events(lay, line, nxt) if animated
+                    else self._static_line_events(lay, line, nxt))
         if watermark:
             out.append(self._watermark(duration))
         return "\n".join(out) + "\n"
@@ -87,7 +108,7 @@ class AssBuilder:
         )
 
     @staticmethod
-    def _header(L: _Layout) -> List[str]:
+    def _header(L: _Layout, box_color: str) -> List[str]:
         b = L.bold
         return [
             "[Script Info]",
@@ -101,14 +122,14 @@ class AssBuilder:
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
             "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            # Подложка: заливка текста прозрачна, «обводка» = фиолетовая плашка (BorderStyle=3)
-            f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,&H00DD4E9D,&H00000000,"
+            # Подложка: заливка текста прозрачна, «обводка» = цветная плашка (BorderStyle=3)
+            f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,{box_color},&H00000000,",
             f"{b},0,0,0,100,100,0,0,3,{L.pad},0,2,10,10,{L.margin_v},1",
             # Текст: белый с чёрной обводкой
-            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,",
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,2,10,10,{L.margin_v},1",
             # Водяной знак: слева внизу, ~60% непрозрачности
-            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,"
+            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,",
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,1,20,20,20,1",
             "",
             "[Events]",
@@ -174,6 +195,24 @@ class AssBuilder:
         line_end = min(max(line.end + LINE_TAIL, t[-1] + an[-1] + 0.10), hard_end)
         return t, an, line_end
 
+    def _static_line_events(self, L: _Layout, line, next_line) -> List[str]:
+        """Без анимации: строка появляется целиком (текст + плашка) и мягко гаснет."""
+        ws = line.words
+        if not ws:
+            return []
+        words = [_ass_escape(w.word) for w in ws]
+        t, _an, line_end = self._timing(line, next_line)
+        start = t[0]
+        pos = f"{{\\an2\\pos({L.cx:.1f},{L.cy:.1f})}}"
+        fad = f"{{\\fad({int(STATIC_FADE_IN * 1000)},{int(LINE_FADE_OUT * 1000)})}}"
+        text = " ".join(words)
+        if line_end - start < 0.05:                 # защита от мгновенных строк
+            line_end = start + 0.05
+        return [
+            f"Dialogue: 0,{_ass_time(start)},{_ass_time(line_end)},Box,,0,0,0,,{pos}{fad}{text}",
+            f"Dialogue: 1,{_ass_time(start)},{_ass_time(line_end)},Text,,0,0,0,,{pos}{fad}{text}",
+        ]
+
     def _line_events(self, L: _Layout, line, next_line) -> List[str]:
         ws = line.words
         n = len(ws)
@@ -206,5 +245,5 @@ class AssBuilder:
                 parts = [("{\\3a&H00&}" if j == i else "{\\3a&HFF&}") + wd
                          for j, wd in enumerate(words)]
                 out.append(f"Dialogue: 0,{_ass_time(s0)},{_ass_time(hl_end)},Box,,0,0,0,,"
-                           f"{pos}{' '.join(parts)}")
+                            f"{pos}{' '.join(parts)}")
         return out

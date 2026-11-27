@@ -48,7 +48,8 @@ class ScanService:
                 job.progress = "Ищу громкие моменты"
                 analysis = asyncio.ensure_future(                     # NEW
                     asyncio.to_thread(self._analyzer.analyze_media, src, wav, self._ffmpeg,
-                                      self._max, lambda: job.cancelled))
+                                      self._max, lambda: job.cancelled,
+                                      getattr(job, "kinds", None) or None))
                 res = await asyncio.shield(analysis)
                 eta.record(key, vid_sec or res["duration"], time.time() - t0)
             job.eta = 0.0

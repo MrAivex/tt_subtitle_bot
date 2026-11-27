@@ -29,16 +29,21 @@ def full_name(title: str) -> str:
 
 
 class RenderService:
-    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int, slots: int = 2):
+    def __init__(self, renderer, ffmpeg, billing, max_full_sec: int, slots: int = 2,
+                 on_ready=None):
+        """on_ready(job, idx) — необязательный колбэк после успешного рендера
+        (в webapp — доставка готового файла документом в чат мессенджера)."""
         self._renderer = renderer
         self._ffmpeg = ffmpeg
         self._billing = billing
         self._max_full_sec = max_full_sec
         self._slots = asyncio.Semaphore(slots)
         self._slots_n = slots
-        self._ahead = 0 
+        self._ahead = 0
+        self._on_ready = on_ready
 
-    async def run(self, job, idx: int, subs: bool, vertical: bool):
+    async def run(self, job, idx: int, subs: bool, vertical: bool,
+                  color: str = None, animated: bool = True):
         extra: list = []
         key = "full" if idx == FULL_VIDEO else "clip"
         sec = job.duration if idx == FULL_VIDEO else job.moments[idx]["end"] - job.moments[idx]["start"]
@@ -51,11 +56,17 @@ class RenderService:
                 t0 = time.time()
                 await self._charge_once(job)
                 if idx == FULL_VIDEO:
-                    job.renders[idx] = await self._full(job, vertical, extra)
+                    job.renders[idx] = await self._full(job, vertical, extra, color, animated)
                 else:
-                    job.renders[idx] = await self._clip(job, idx, subs, vertical, extra)
+                    job.renders[idx] = await self._clip(job, idx, subs, vertical, extra,
+                                                        color, animated)
                 eta.record(key, sec, time.time() - t0)
             job.progress = ""
+            if self._on_ready is not None:
+                try:
+                    await self._on_ready(job, idx)
+                except Exception:
+                    traceback.print_exc()   # доставка не должна ломать результат рендера
         except ApiError as e:
             rm(*extra)
             job.renders[idx] = {"status": "error", "error": e.msg}
@@ -71,7 +82,7 @@ class RenderService:
             job.premium = await self._billing.charge(job.user_id, job.chat_id)
             job.charged = True
 
-    async def _clip(self, job, idx, subs, vertical, extra) -> dict:
+    async def _clip(self, job, idx, subs, vertical, extra, color, animated) -> dict:
         m = job.moments[idx]
         job.progress = f"Клип {idx + 1}"
         clip = await job.source.cut(m["start"], m["end"], f"downloads/clip_{job.id}_{idx}.mp4")
@@ -79,7 +90,8 @@ class RenderService:
         final = clip
         if subs:
             res = await asyncio.to_thread(
-                self._renderer.render, clip, premium=job.premium, vertical=vertical)
+                self._renderer.render, clip, premium=job.premium, vertical=vertical,
+                color=color, animated=animated)
             final = res.video_path
             if res.srt_path:
                 extra.append(res.srt_path)
@@ -89,7 +101,7 @@ class RenderService:
         return {"status": "ready", "path": final,
                 "name": clip_name(job.title, idx + 1), "extra": extra}
 
-    async def _full(self, job, vertical, extra) -> dict:
+    async def _full(self, job, vertical, extra, color, animated) -> dict:
         if job.duration > self._max_full_sec:
             raise ApiError(f"Видео длиннее {self._max_full_sec // 60} минут — только хайлайты")
         job.progress = "Готовлю полное видео"
@@ -98,7 +110,8 @@ class RenderService:
             extra.append(src)
         job.progress = "Субтитры на всё видео"
         res = await asyncio.to_thread(
-            self._renderer.render, src, premium=job.premium, vertical=vertical)
+            self._renderer.render, src, premium=job.premium, vertical=vertical,
+            color=color, animated=animated)
         if res.srt_path:
             extra.append(res.srt_path)
         return {"status": "ready", "path": res.video_path,

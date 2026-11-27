@@ -6,6 +6,7 @@ words() — для субтитров (слова с таймингами), text
 import logging
 import re
 import threading
+import wave
 from typing import List
 from config import WHISPER_BEAM, WHISPER_PROMPT
 
@@ -16,6 +17,26 @@ from utils import timed
 from .words import Word
 
 log = logging.getLogger("timing")
+
+
+def _load_wav_f32(wav_path):
+    """Наш WAV (16 кГц, моно, s16le) → float32-массив для Whisper.
+
+    faster-whisper 1.1.0 при передаче ПУТИ сам декодирует звук через PyAV
+    (decode_audio → av.open(..., metadata_errors=...)), а этот аргумент появился
+    только в PyAV 12. На сервере av старее — любой запрос падает с
+    "TypeError: open() got an unexpected keyword argument 'metadata_errors'".
+    Читаем файл сами (stdlib wave + numpy) и передаём готовый массив: PyAV
+    не вызывается вовсе. Не наш формат (не PCM) — возвращаем путь как раньше.
+    """
+    try:
+        with wave.open(str(wav_path), "rb") as wf:
+            if (wf.getframerate(), wf.getnchannels(), wf.getsampwidth()) != (16000, 1, 2):
+                raise ValueError("не 16 кГц/моно/s16")
+            raw = wf.readframes(wf.getnframes())
+        return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    except Exception:
+        return str(wav_path)
 
 # Типичные галлюцинации Whisper на шуме/тишине (подписи из обучающих данных)
 _HALLUCINATION_RE = re.compile(
@@ -70,7 +91,7 @@ class Transcriber:
             model = self.model
         with timed("whisper: распознавание"):
             segments, _ = model.transcribe(
-                str(wav_path), language="ru", task="transcribe",
+                _load_wav_f32(wav_path), language="ru", task="transcribe",
                 beam_size=WHISPER_BEAM,
                 temperature=[0.0, 0.2, 0.4],          # если beam-поиск зациклился, пробуем с шумом
                 compression_ratio_threshold=2.4,

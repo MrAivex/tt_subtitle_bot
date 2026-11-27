@@ -29,13 +29,13 @@ def _read_segment(path, start, end):
 
 
 def enrich(candidates, curves, feats, wav_path, asr=None, stop=None):
-    from highlights.kinds import KINDS
     n = len(feats["rms"])
     mean_rms = float(feats["rms"].mean()) + 1e-9
 
     def one(c):
         a, b = int(c["start"] / 0.5), min(n, int(c["end"] / 0.5) + 1)
-        c["cats"] = {k: float(curves[k][a:b].max()) for k in KINDS}
+        # все кривые, включая talk: по ним ранжируются «разговорники»
+        c["cats"] = {k: float(curves[k][a:b].max()) for k in curves}
         c["energy"] = round(float(feats["rms"][a:b].mean() / mean_rms), 2)
         if stop and stop():
             c["text"] = ""
@@ -57,7 +57,7 @@ def enrich(candidates, curves, feats, wav_path, asr=None, stop=None):
 
 
 def finalize(candidates, max_moments):
-    """Отсортировать и вернуть финальные moments."""
+    """Отсортировать и вернуть финальные moments (авто-режим: тип определяет label())."""
     candidates.sort(key=lambda c: c["score"], reverse=True)
     candidates = candidates[:max_moments]
     candidates.sort(key=lambda c: c["start"])
@@ -73,4 +73,25 @@ def finalize(candidates, max_moments):
         moments.append(m)
         log.info(f"[HIGHLIGHTS] {c['start']:.0f}-{c['end']:.0f}s {label_text} score={c['score']:.2f} "
                  + " ".join(f"{k}={v:.2f}" for k, v in c["cats"].items()))
+    return moments
+
+
+def finalize_kind(candidates, kind, count):
+    """Финальные moments для выбранной категории (тип фиксирован, ранжируем по её кривой)."""
+    from highlights.kinds import CATEGORIES
+    candidates.sort(key=lambda c: c["cats"].get(kind, c.get("score", 0.0)), reverse=True)
+    candidates = candidates[:count]
+    candidates.sort(key=lambda c: c["start"])
+
+    title, emoji = CATEGORIES.get(kind, (kind.capitalize(), "✨"))
+    moments = []
+    for c in candidates:
+        m = {"start": c["start"], "end": c["end"], "energy": c["energy"],
+             "score": round(c["cats"].get(kind, c.get("score", 0.0)), 2),
+             "kind": kind, "tags": [kind], "emoji": emoji, "label": f"{title} {emoji}"}
+        if c.get("text"):
+            m["snippet"] = c["text"][:67] + "…" if len(c["text"]) > 70 else c["text"]
+        moments.append(m)
+        log.info(f"[HIGHLIGHTS] {kind} {c['start']:.0f}-{c['end']:.0f}s "
+                 f"{c['cats'].get(kind, 0):.2f}")
     return moments

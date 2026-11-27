@@ -1,5 +1,13 @@
-// static/js/gallery.js — сетка плиток с моментами: выбор сердечком, скачивание, открытие в плеере.
-import { $, esc, fmt } from './utils.js';
+// static/js/gallery.js — сетка плиток с моментами: группы по типам, выбор сердечком,
+// скачивание, открытие в плеере.
+import { $, esc, fmt } from '../utils.js';
+
+// порядок и подписи групп; kind приходит с сервера (fight/funny/talk + старые типы)
+const KIND_ORDER = ['fight', 'funny', 'talk'];
+const KIND_TITLES = {
+  fight: '🔫 Файты', funny: '😂 Смешные', talk: '💬 Разговорники',
+  shock: '😱 Шок', win: '🏆 Победы', absurd: '🤡 Абсурд', hype: '🔊 Громкие',
+};
 
 export class Gallery {
   /**
@@ -8,7 +16,7 @@ export class Gallery {
    * @param {ThumbnailCache} deps.thumbs
    * @param {Downloader}     deps.downloader
    * @param {Toast}          deps.toast
-   * @param {() => number}   deps.getCurrent — какой клип сейчас в плеере
+   * @param {() => number}    deps.getCurrent — какой клип сейчас в плеере
    * @param {(i) => void}    deps.onOpen     — открыть клип i в плеере
    * @param {(i) => void}    deps.onToggle   — отметить/снять клип i
    */
@@ -38,6 +46,7 @@ export class Gallery {
 
     const sig = JSON.stringify([
       j.id,
+      moments.map((m) => m.kind || 'hype').join(','),
       moments.length,
       (j.previews || []).map((p) => p.idx + p.status),
       Object.entries(s.renders).map(([k, v]) => k + v.status),
@@ -48,8 +57,29 @@ export class Gallery {
     if (sig === this._sig) return;
     this._sig = sig;
 
-    $('#grid').innerHTML = moments.map((m, i) => this._tile(m, i, cur)).join('');
+    $('#grid').innerHTML = this._sections(moments, cur);
     this._thumbs.fill();
+  }
+
+  /** Плитки сгруппированы по типу момента; номер на плитке = настоящий номер в списке. */
+  _sections(moments, cur) {
+    if (!moments.length) return '';
+    const groups = new Map();
+    moments.forEach((m, i) => {
+      const k = m.kind || 'hype';
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(i);
+    });
+    const order = [
+      ...KIND_ORDER.filter((k) => groups.has(k)),
+      ...[...groups.keys()].filter((k) => !KIND_ORDER.includes(k)),
+    ];
+    return order.map((k) => {
+      const idxs = groups.get(k);
+      const title = KIND_TITLES[k] || k;
+      return `<div class="ghead">${title} <span>· ${idxs.length}</span></div>`
+        + idxs.map((i) => this._tile(moments[i], i, cur)).join('');
+    }).join('');
   }
 
   /** @returns {boolean} true — клик обработан галереей */

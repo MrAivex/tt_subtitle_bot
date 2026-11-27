@@ -35,11 +35,14 @@ export class ResultsView extends View {
     this._actionBar.update();
   }
 
-  /** Кнопки «Субтитры / Формат / Новое видео». */
+  /** Кнопки «Субтитры / Цвет / Анимация / Формат / Новое видео». */
   renderOptions() {
     const { state } = this.ctx;
+    const sw = (c) => `<i class="sw" style="background:${c}"></i>`;
     $('#opts').innerHTML = `
     <button data-a="subs" class="${state.subs ? 'on' : ''}">Субтитры: ${state.subs ? 'да' : 'нет'}</button>
+    <button data-a="color">Цвет ${sw(state.color)}</button>
+    <button data-a="anim" class="${state.anim ? 'on' : ''}">Анимация: ${state.anim ? 'караоке' : 'обычные'}</button>
     <button data-a="fmt" class="${state.vert ? 'on' : ''}">Формат: ${state.vert ? '9:16' : 'исходный'}</button>
     <button data-a="reset">Новое видео</button>`;
   }

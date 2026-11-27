@@ -73,10 +73,11 @@ export class Api {
   // ---------- задачи ----------
   active() { return this.request('/active'); }
   job(id) { return this.request('/jobs/' + id); }
-  scan(url) { return this.request('/scan', 'POST', { url }); }
+  scan(url, kinds) { return this.request('/scan', 'POST', { url, kinds }); }
   cancel(id) { return this.request(`/jobs/${id}/cancel`, 'POST'); }
-  prepare(id, idx, subtitles, vertical) {
-    return this.request(`/jobs/${id}/prepare`, 'POST', { idx, subtitles, vertical });
+  prepare(id, idx, subtitles, vertical, color, animated) {
+    return this.request(`/jobs/${id}/prepare`, 'POST',
+      { idx, subtitles, vertical, color: color || '', animated });
   }
 
   // ---------- профиль ----------
@@ -98,9 +99,10 @@ export class Api {
 
   /**
    * Загрузка файла с прогрессом (fetch этого не умеет, поэтому XHR).
+   * @param {string[]} kinds — выбранные типы моментов (fight/funny/talk)
    * @returns {{ promise: Promise<object>, abort: () => void }}
    */
-  upload(file, onProgress) {
+  upload(file, onProgress, kinds) {
     const xhr = new XMLHttpRequest();
     const promise = new Promise((resolve, reject) => {
       xhr.open('POST', '/api/upload');
@@ -118,6 +120,7 @@ export class Api {
       xhr.onabort = () => reject(new UploadAborted());
       const fd = new FormData();
       fd.append('file', file);
+      if (Array.isArray(kinds) && kinds.length) fd.append('kinds', kinds.join(','));
       xhr.send(fd);
     });
     return { promise, abort: () => xhr.abort() };

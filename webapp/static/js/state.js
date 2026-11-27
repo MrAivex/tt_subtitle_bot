@@ -1,5 +1,7 @@
 // static/js/state.js — единственное место, где живёт состояние приложения.
-import { MAX_SELECTED_CLIPS } from './config.js';
+import { MAX_SELECTED_CLIPS, DEFAULT_COLOR } from './config.js';
+
+const STYLE_KEY = 'clip_style';   // цвет/анимация/субтитры/формат — помним между визитами
 
 export class AppState {
   constructor() {
@@ -8,9 +10,30 @@ export class AppState {
     this.sel = new Set();    // номера отмеченных клипов
     this.subs = true;        // накладывать субтитры
     this.vert = false;       // формат 9:16
+    this.color = DEFAULT_COLOR;   // цвет плашки субтитров
+    this.anim = true;        // анимированные субтитры (караоке-вылет слов)
     this.tab = 'home';       // 'home' | 'profile'
     this.up = null;          // идёт загрузка файла: { pct, abort }
     this.seq = 0;            // «поколение» задачи: ответы поллинга со старым seq выбрасываются
+    this._loadStyle();
+  }
+
+  /** Настройки вида клипов сохраняются между визитами. */
+  _loadStyle() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STYLE_KEY) || '{}');
+      if (typeof s.color === 'string') this.color = s.color;
+      if (typeof s.anim === 'boolean') this.anim = s.anim;
+      if (typeof s.subs === 'boolean') this.subs = s.subs;
+      if (typeof s.vert === 'boolean') this.vert = s.vert;
+    } catch (_) { /* первый запуск или чужой localStorage */ }
+  }
+
+  saveStyle() {
+    try {
+      localStorage.setItem(STYLE_KEY, JSON.stringify(
+        { color: this.color, anim: this.anim, subs: this.subs, vert: this.vert }));
+    } catch (_) { /* приватный режим — просто не запоминаем */ }
   }
 
   get renders() {

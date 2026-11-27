@@ -19,3 +19,12 @@ button:disabled{opacity:.5;box-shadow:none;transform:translateY(4px);cursor:defa
 @keyframes stripes{to{background-position:28px 0}}
 .bar i.ind{width:35%!important;animation:stripes .8s linear infinite,sl 1.2s ease-in-out infinite alternate}
 @keyframes sl{to{margin-left:65%}}
+
+/* ---- типы моментов на стартовом экране ---- */
+.cats{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.cat{flex:1 1 30%;display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:3px solid var(--line);
+  border-radius:16px;background:var(--card);font:800 13px var(--h);color:var(--ink);cursor:pointer;user-select:none}
+.cat input{accent-color:var(--pink);width:19px;height:19px;margin:1px 0 0;flex:0 0 auto}
+.cat span{min-width:0}
+.cat i{font-style:normal;font-size:15px}
+.cat small{display:block;color:var(--mute);font:700 11px var(--f);margin-top:2px}

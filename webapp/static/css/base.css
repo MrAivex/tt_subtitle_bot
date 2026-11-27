@@ -1,7 +1,7 @@
 :root{
   --bg:#fff3f8;--dot:#ffd0e4;--card:#fff;--ink:#2a1f45;--mute:#7a6c9a;--line:#2a1f45;--sh:#2a1f45;
   --pink:#ff5fa2;--lav:#8b7bff;--sun:#ffd23f;--hl:#fff0a8;
-  --k-fight:#ff5a6e;--k-funny:#ffd23f;--k-shock:#9b87ff;--k-win:#ffa94d;--k-absurd:#3ddc97;--k-hype:#ff8fc8;
+  --k-fight:#ff5a6e;--k-funny:#ffd23f;--k-shock:#9b87ff;--k-win:#ffa94d;--k-absurd:#3ddc97;--k-hype:#ff8fc8;--k-talk:#38c6f4;
   --f:'Nunito',system-ui,sans-serif;--h:'Rubik','Nunito',system-ui,sans-serif}
 @media(prefers-color-scheme:dark){:root{
   --bg:#1a1430;--dot:#2c2250;--card:#2a2147;--ink:#f6edff;--mute:#b6a9d9;--line:#8f80ee;--sh:#0a0716;--hl:#5b3d8f}}

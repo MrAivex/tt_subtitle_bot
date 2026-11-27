@@ -20,6 +20,20 @@ from miniapp.tasks import spawn
 
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
+# типы моментов, которые пользователь может выбрать перед сканированием
+VALID_KINDS = ("fight", "funny", "talk")
+
+
+def _parse_kinds(raw) -> list:
+    """['fight','funny'] / 'fight,funny' → список валидных категорий; пусто — авто-режим."""
+    if isinstance(raw, list):
+        items = [str(x).strip().lower() for x in raw]
+    elif isinstance(raw, str):
+        items = [x.strip().lower() for x in raw.split(",")]
+    else:
+        items = []
+    return [k for k in VALID_KINDS if k in items]
+
 
 class WebClipsHandlers:
     def __init__(self, jobs, billing, scan, render, signer, ffmpeg, downloader):
@@ -69,12 +83,15 @@ class WebClipsHandlers:
 
     async def scan(self, request):
         uid = request["uid"]
-        url = ((await request.json()).get("url") or "").strip()
+        body = await request.json()
+        url = (body.get("url") or "").strip()
         if not detect_platform(url):
             raise ApiError("Не узнаю ссылку. Подойдут YouTube, Twitch, TikTok, Google Drive и Яндекс.Диск.")
         user = await self._billing.ensure_can_start(uid)
         with self._jobs.slot(uid):
             job = self._jobs.add(Job(uid, user.chat_id or 0, LinkSource(url)))
+            job.platform = request.get("platform") or ""
+            job.kinds = _parse_kinds(body.get("kinds"))
         job.task = spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
@@ -82,7 +99,8 @@ class WebClipsHandlers:
         uid = request["uid"]
         user = await self._billing.ensure_can_start(uid)
         with self._jobs.slot(uid):          # место занято на всё время загрузки файла
-            field = await (await request.multipart()).next()
+            mp = await request.multipart()
+            field = await mp.next()
             if field is None:
                 raise ApiError("Файл не получен")
             filename = getattr(field, "filename", "") or ""
@@ -91,7 +109,18 @@ class WebClipsHandlers:
                 raise ApiError("Нужен видеофайл: mp4, mov, avi, mkv или webm")
             path = f"downloads/web_{uid}_{uuid.uuid4().hex[:10]}{ext.lower()}"
             await self._save(field, path)
+            kinds = []
+            while True:                     # после файла могут идти поля формы (kinds)
+                extra = await mp.next()
+                if extra is None:
+                    break
+                if extra.name == "kinds":
+                    kinds = _parse_kinds(await extra.text())
+                else:
+                    await extra.read()
             job = self._jobs.add(Job(uid, user.chat_id or 0, FileSource(path, stem, self._ffmpeg)))
+            job.platform = request.get("platform") or ""
+            job.kinds = kinds
         job.task = spawn(self._scan.run(job))
         return web.json_response(self._pub(job))
 
@@ -143,8 +172,12 @@ class WebClipsHandlers:
         if cur and cur["status"] in ("pending", "ready"):
             return web.json_response(self._pub(job))
         job.renders[idx] = {"status": "pending"}
+        # цвет плашки субтитров («#RRGGBB») и режим: анимированные или обычные
+        color = (body.get("color") or "").strip()
+        animated = body.get("animated", True)
         spawn(self._render.run(job, idx, bool(body.get("subtitles", True)),
-                               bool(body.get("vertical", False))))
+                               bool(body.get("vertical", False)),
+                               color=color, animated=bool(animated)))
         return web.json_response(self._pub(job))
 
     # ---------- файлы ----------

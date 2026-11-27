@@ -1,4 +1,4 @@
-"""webapp/ — единое веб-приложение (сайт), которое работает сразу как:
+"""webapp/__init__.py — единое веб-приложение (сайт), которое работает сразу как:
 
   миниapp MAX      (initData MAX из https://st.max.ru/js/max-web-app.js),
   миниapp Telegram (initData TG  из https://telegram.org/js/telegram-web-app.js),
@@ -22,6 +22,7 @@ from miniapp.scan_service import ScanService
 from miniapp.render_service import RenderService
 from web_billing import UnifiedBilling
 from .auth import MultiInitDataValidator, SessionTokens, MediaTokenSigner
+from .chat_delivery import ChatDelivery
 from .middleware import make_middleware
 from .clips_handlers import WebClipsHandlers
 from .profile_handlers import WebProfileHandlers
@@ -51,7 +52,17 @@ def register_webapp(app: web.Application, *, ffmpeg, analyzer, renderer, downloa
 
     previews = PreviewService(ffmpeg)
     scan = ScanService(analyzer, previews, MAX_HIGHLIGHTS, ffmpeg)
-    render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC, slots=RENDER_SLOTS)
+
+    # готовые клипы дополнительно уходят документом в чат мессенджера (TG/MAX)
+    delivery = ChatDelivery()
+
+    async def _deliver(job, idx):
+        r = job.renders.get(idx) or {}
+        if r.get("status") == "ready" and r.get("path"):
+            await delivery.deliver(job, idx, r["path"], r.get("name", ""))
+
+    render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC,
+                            slots=RENDER_SLOTS, on_ready=_deliver)
 
     clips = WebClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader)
     profile = WebProfileHandlers(billing)

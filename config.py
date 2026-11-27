@@ -24,8 +24,8 @@ if _admin_ids_str:
 # Лимиты
 MAX_FILE_SIZE_BYTES = 2_500_000_000  # 2.5 ГБ
 MAX_FULL_VIDEO_SEC = 30 * 60         # 30 минут
-MAX_HIGHLIGHTS = 5                   # максимум моментов при сканировании
-MAX_CLIPS_PER_REQUEST = 3            # максимум клипов за одну нарезку
+MAX_HIGHLIGHTS = 5                   # максимум моментов при сканировании (авто-режим)
+MAX_CLIPS_PER_REQUEST = 12           # максимум клипов за одну нарезку (хватает на все 10 файтов)
 
 # Планировщик (часовой пояс)
 from pytz import timezone

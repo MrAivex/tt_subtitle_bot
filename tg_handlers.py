@@ -31,7 +31,7 @@ from miniapp.tasks import spawn
 from miniapp.errors import ApiError
 from services_web import resolve_identity, get_users_stats_web
 
-VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ").webm")
+VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
 bot = TgBot(TG_TOKEN)
 billing = UnifiedBilling()

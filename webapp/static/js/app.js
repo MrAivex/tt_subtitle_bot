@@ -1,6 +1,6 @@
 // static/js/app.js — контроллер: собирает компоненты, решает, какой экран показать,
 // и управляет жизнью задачи (старт → поллинг → результат → сброс).
-import { MAX_SELECTED_CLIPS } from './config.js';
+import { MAX_SELECTED_CLIPS, PALETTE } from './config.js';
 import { UploadAborted } from './api.js';
 import { etaText, $ } from './utils.js';
 import { Toast } from './toast.js';
@@ -58,8 +58,27 @@ export class App {
     // ---- кнопки с data-a="..." ----
     this.actions = {
       scan: () => this.onScanClick(),
-      subs: () => { state.subs = !state.subs; this.resultsView.renderOptions(); },
-      fmt: () => { state.vert = !state.vert; this.resultsView.renderOptions(); },
+      subs: () => {
+        state.subs = !state.subs;
+        state.saveStyle();
+        this.resultsView.renderOptions();
+      },
+      fmt: () => {
+        state.vert = !state.vert;
+        state.saveStyle();
+        this.resultsView.renderOptions();
+      },
+      color: () => {                                  // цвет плашки — по кругу из палитры
+        const i = PALETTE.indexOf(state.color);
+        state.color = PALETTE[(i + 1) % PALETTE.length] || PALETTE[0];
+        state.saveStyle();
+        this.resultsView.renderOptions();
+      },
+      anim: () => {
+        state.anim = !state.anim;
+        state.saveStyle();
+        this.resultsView.renderOptions();
+      },
       reset: () => this.resetJob(),
       cancel: (button) => this.cancelJob(button),
       cancelup: () => { if (state.up && state.up.abort) state.up.abort(); },
@@ -175,12 +194,19 @@ export class App {
   onScanClick() {
     const url = $('#url').value.trim();
     if (!url) return this.toast.show('Вставь ссылку');
-    return this.startScan(url);
+    const kinds = this._readKinds();
+    if (!kinds.length) return this.toast.show('Отметь хотя бы один тип моментов');
+    return this.startScan(url, kinds);
   }
 
-  async startScan(url) {
+  /** Выбранные типы моментов на стартовом экране (чекбоксы). */
+  _readKinds() {
+    return [...document.querySelectorAll('.cats input:checked')].map((c) => c.dataset.kind);
+  }
+
+  async startScan(url, kinds) {
     try {
-      this.adoptJob(await this.api.scan(url));
+      this.adoptJob(await this.api.scan(url, kinds));
       this.paint();
       this.poller.start();
     } catch (e) {
@@ -191,6 +217,8 @@ export class App {
 
   async uploadFile(file) {
     const s = this.state;
+    const kinds = this._readKinds();
+    if (!kinds.length) return this.toast.show('Отметь хотя бы один тип моментов');
     s.up = { pct: 0, abort: null };
     this.mascot.reset();
     this.paint();
@@ -199,7 +227,7 @@ export class App {
       if (!s.up) return;
       s.up.pct = pct;
       this.busyView.setProgress(pct);
-    });
+    }, kinds);
     s.up.abort = abort;
 
     let job;
@@ -235,7 +263,7 @@ export class App {
     const s = this.state;
     for (const i of idxs) {
       try {
-        s.job = await this.api.prepare(s.job.id, i, s.subs, s.vert);
+        s.job = await this.api.prepare(s.job.id, i, s.subs, s.vert, s.color, s.anim);
       } catch (e) {
         this.toast.show(e.message);
         break;

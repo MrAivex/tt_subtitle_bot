@@ -33,6 +33,10 @@ from services_web import resolve_identity, get_users_stats_web
 
 VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
+# что ищем в чате, если пользователь не выбирал типы в приложении
+KINDS_ALL = ("fight", "funny", "talk")
+_KIND_TITLES = {"fight": "🔫 Файты", "funny": "😂 Смешные", "talk": "💬 Разговорники"}
+
 bot = TgBot(TG_TOKEN)
 billing = UnifiedBilling()
 jobs = JobStore()
@@ -75,11 +79,20 @@ def _ts(sec: float) -> str:
 def _moments_text(job) -> str:
     title = f" в «{html.escape(job.title)}»" if job.title else ""
     lines = [f"🎬 <b>Нашёл моментов: {len(job.moments)}</b>{title}:"]
-    for i, m in enumerate(job.moments, 1):
-        row = f"{i}. {m['emoji']} {html.escape(m['label'])} — {_ts(m['start'])}–{_ts(m['end'])}"
-        if m.get("snippet"):
-            row += f"\n<i>«{html.escape(m['snippet'])}»</i>"
-        lines.append(row)
+    groups, order = {}, []
+    for i, m in enumerate(job.moments):
+        k = m.get("kind") or "hype"
+        if k not in groups:
+            groups[k] = []
+            order.append(k)
+        groups[k].append((i, m))
+    for k in order:
+        lines.append(f"\n<b>{_KIND_TITLES.get(k, 'Моменты')}</b>")
+        for i, m in groups[k]:
+            row = f"{i + 1}. {m['emoji']} {html.escape(m['label'])} — {_ts(m['start'])}–{_ts(m['end'])}"
+            if m.get("snippet"):
+                row += f"\n<i>«{html.escape(m['snippet'])}»</i>"
+            lines.append(row)
     lines.append("")
     lines.append(f"Жми на номер — нарежу клип с субтитрами (до {MAX_CLIPS_PER_REQUEST} за раз).")
     return "\n".join(lines)
@@ -97,7 +110,9 @@ def _moments_kb(job) -> dict:
         else:
             mark = ""
         return {"text": f"{mark}{i}", "callback_data": f"cut:{job.id}:{i - 1}"}
-    return {"inline_keyboard": [[btn(i) for i in range(1, len(job.moments) + 1)]]}
+    # в ряду не больше 5 кнопок (лимит Telegram — 8)
+    btns = [btn(i) for i in range(1, len(job.moments) + 1)]
+    return {"inline_keyboard": [btns[k:k + 5] for k in range(0, len(btns), 5)]}
 
 
 def _cancel_kb(job_id: str) -> dict:
@@ -135,7 +150,7 @@ async def _start_job(chat_id: int, uid: int, source) -> None:
     try:
         await billing.ensure_can_start(uid)
         with jobs.slot(uid):
-            job = jobs.add(Job(uid, chat_id, source))
+            job = jobs.add(Job(uid, chat_id, source, kinds=list(KINDS_ALL)))
     except PermissionError as e:
         await bot.send_message(chat_id, f"⛔ {e}")
         return
@@ -208,7 +223,8 @@ async def _start_file_job(chat_id: int, uid: int, v: dict) -> None:
             got = await bot.download_file(v["file_id"], path)
             if not got:
                 raise RuntimeError("download failed")
-            job = jobs.add(Job(uid, chat_id, FileSource(path, stem or "video", ffmpeg)))
+            job = jobs.add(Job(uid, chat_id, FileSource(path, stem or "video", ffmpeg),
+                               kinds=list(KINDS_ALL)))
     except ApiError as e:
         rm(path)
         await bot.send_message(chat_id, e.msg)
@@ -259,8 +275,9 @@ async def _render_and_send(job, idx: int):
                f"{_ts(m['start'])}–{_ts(m['end'])}")
     if m.get("snippet"):
         caption += f"\n«{html.escape(m['snippet'])}»"
-    if not await bot.send_video(job.chat_id, path, caption=caption):
-        await bot.send_message(job.chat_id, f"❌ Клип {idx + 1}: не удалось отправить видео в Telegram.")
+    # документом (файлом): без сжатия Telegram и без превью-плеера — качество исходное
+    if not await bot.send_document(job.chat_id, path, caption=caption):
+        await bot.send_message(job.chat_id, f"❌ Клип {idx + 1}: не удалось отправить файл в Telegram.")
     await refresh_moments(job)
 
 

@@ -3,6 +3,7 @@
 Без внешних зависимостей. Что умеем:
   sendMessage / editMessageText / answerCallbackQuery / sendChatAction
   sendVideo (multipart, лимит Bot API — 50 МБ)
+  sendDocument (multipart — видео файлом/документом, без сжатия и превью)
   getFile + скачивание (лимит Bot API — 20 МБ)
   setWebhook (с secret_token — проверка, что апдейты шлёт сам Telegram)
 
@@ -142,6 +143,41 @@ class TgBot:
                             return None
             except Exception as e:
                 print(f"[TG sendVideo] {e}", flush=True)
+                return None
+        return None
+
+    async def send_document(self, chat_id: int, file_path: str, caption: str = "",
+                             parse_mode: str = "HTML") -> int | None:
+        """Файл документом multipart'ом (лимит Bot API — 50 МБ). Возвращает message_id.
+
+        Отправка именно документом: Telegram не пережимает файл и не делает
+        превью-плеер — пользователь получает исходное качество как файл.
+        """
+        for attempt in range(3):
+            try:
+                async with self._session() as session:
+                    with open(file_path, "rb") as f:
+                        form = aiohttp.FormData()
+                        form.add_field("document", f, filename=os.path.basename(file_path),
+                                       content_type="application/octet-stream")
+                        form.add_field("chat_id", str(chat_id))
+                        if caption:
+                            form.add_field("caption", caption)
+                        if parse_mode:
+                            form.add_field("parse_mode", parse_mode)
+                        async with session.post(f"{self.base_url}/sendDocument", data=form) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                return (data.get("result") or {}).get("message_id")
+                            if resp.status == 429 and attempt < 2:
+                                wait = int(resp.headers.get("Retry-After") or 3)
+                                print(f"[TG sendDocument] 429, жду {wait}с", flush=True)
+                                await asyncio.sleep(wait)
+                                continue
+                            print(f"[TG sendDocument] {resp.status}: {(await resp.text())[:300]}", flush=True)
+                            return None
+            except Exception as e:
+                print(f"[TG sendDocument] {e}", flush=True)
                 return None
         return None
 

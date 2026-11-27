@@ -5,7 +5,8 @@
     hash    = HMAC_SHA256(key=secret,  data=check_string)
 Отличия мелкие:
     MAX    — initData обёрнут в «WebAppData=…», значения в check_string декодированы (unquote);
-    TG     — initData это обычная query string, check_string собирается из сырых значений.
+    TG     — initData это обычная query string, значения в check_string тоже декодированы
+             (parse_qsl), как в эталонных реализациях aiogram / pyTelegramBotAPI.
 Различные токены → разные подписи, поэтому перепутать платформы невозможно.
 """
 import hashlib
@@ -14,7 +15,7 @@ import json
 import logging
 import os
 import time
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote
 
 log = logging.getLogger("timing")
 
@@ -97,18 +98,17 @@ class MultiInitDataValidator:
     def _validate_tg(self, raw: str):
         if not raw or "WebAppData=" in raw:
             return None                    # TG присылает обычную query string
-        pairs = []
-        for part in raw.split("&"):
-            if not part:
-                continue
-            k, _, v = part.partition("=")
-            pairs.append((k, v))           # НЕ декодируем: check_string строится из сырых значений
+        pairs = parse_qsl(raw, keep_blank_values=True)
+        if not pairs:
+            self._why(f"TG: initData не парсится (len={len(raw or '')})")
+            return None
         d = dict(pairs)
         if "hash" not in d or "user" not in d:
             self._why("TG: нет hash/user")
             return None
-        body = sorted((k, v) for k, v in pairs if k != "hash")
-        check = "\n".join(f"{k}={v}" for k, v in body).encode()
+        # check_string — из ДЕКОДИРОВАННЫХ значений (так подписывает сам Telegram;
+        # ровно так делают aiogram и pyTelegramBotAPI: parse_qsl + sorted)
+        check = "\n".join(f"{k}={v}" for k, v in sorted(d.items()) if k != "hash").encode()
         secret = hmac.new(b"WebAppData", self._tg_token.encode(), hashlib.sha256).digest()
         calc = hmac.new(secret, check, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, d["hash"]):
@@ -119,7 +119,7 @@ class MultiInitDataValidator:
             self._why(f"TG: initData просрочена (auth_date={ts})")
             return None
         try:
-            u = json.loads(unquote(d["user"]))
+            u = json.loads(d["user"])          # parse_qsl уже декодировал значение
             return str(u["id"]), self._display_name(u)
         except Exception as e:
             self._why(f"TG: не разобрал user: {type(e).__name__}")

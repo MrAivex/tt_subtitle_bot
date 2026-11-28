@@ -1,5 +1,7 @@
 import os
 import asyncio
+import json
+
 import aiohttp
 
 
@@ -7,6 +9,7 @@ class MaxBot:
     def __init__(self, token: str):
         self.token = token
         self.base_url = "https://platform-api2.max.ru"
+        self.last_error = ""    # текст последней ошибки (для логов доставки)
 
     @property
     def headers(self):
@@ -66,7 +69,7 @@ class MaxBot:
             return None, None
 
     async def _upload_file(self, upload_url: str, file_path: str):
-        """Загружает файл. Возвращает token (если в ответе), либо True/False."""
+        """Загружает файл. Возвращает token (если в ответе), True (успех без token) или None (ошибка)."""
         try:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 with open(file_path, "rb") as f:
@@ -75,17 +78,21 @@ class MaxBot:
                     async with session.post(upload_url, data=form) as resp:
                         body = await resp.text()
                         if resp.status != 200:
+                            # раньше здесь печаталась ошибка, но метод возвращал успех —
+                            # доставка шла с неподнятым файлом и падала уже на сообщении
                             print(f"[MAX _upload_file ERROR] status={resp.status}, body={body[:200]}", flush=True)
-                        # Пробуем вытащить token из JSON-ответа
+                            self.last_error = f"загрузка файла: HTTP {resp.status}"
+                            return None
                         try:
-                            data = await resp.json()
+                            data = json.loads(body)
                             if isinstance(data, dict) and data.get("token"):
                                 return data["token"]
                         except Exception:
                             pass
-                        return True   # для видео и других — просто True
+                        return True   # токен не возвращён — используем токен из /uploads
         except Exception as e:
             print(f"[MAX _upload_file] {type(e).__name__}: {e}")
+            self.last_error = f"загрузка файла: {type(e).__name__}"
             return None
 
     async def upload_video(self, video_path: str):
@@ -162,26 +169,42 @@ class MaxBot:
         return None
 
     async def send_document(self, chat_id: int, file_path: str, caption: str = ""):
+        """Файл в чат документом (attachments type=file). Возвращает id сообщения или None.
+
+        После загрузки MAX обрабатывает файл не сразу: ответ «not.ready» на
+        сообщении — норма, поэтому ждём и повторяем (как в send_video).
+        """
+        self.last_error = ""
         token = await self.upload_document(file_path)
         if not token:
-            print("[MAX send_document] не удалось загрузить файл")
+            if not self.last_error:
+                self.last_error = "не удалось получить URL загрузки файла"
+            print("[MAX send_document] не удалось загрузить файл", flush=True)
             return None
-        await asyncio.sleep(1)
         url = f"{self.base_url}/messages?chat_id={chat_id}"
         payload = {
             "text": caption,
             "format": "markdown",
             "attachments": [{"type": "file", "payload": {"token": token}}]
         }
-        try:
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-                async with session.post(url, json=payload, headers=self.headers) as resp:
-                    if resp.status in (200, 201):
-                        data = await resp.json()
-                        return data.get("id") or (data.get("message") or {}).get("body", {}).get("mid")
-                    else:
-                        print(f"[MAX send_document] {resp.status}: {await resp.text()}")
+        for attempt in range(12):                      # ~ до 2-3 минут ожидания обработки
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+                    async with session.post(url, json=payload, headers=self.headers) as resp:
+                        if resp.status in (200, 201):
+                            data = await resp.json()
+                            return data.get("id") or (data.get("message") or {}).get("body", {}).get("mid")
+                        body = await resp.text()
+                        if resp.status == 400 and "not.ready" in body:
+                            await asyncio.sleep(3 + attempt * 2)   # MAX ещё обрабатывает файл
+                            continue
+                        self.last_error = f"HTTP {resp.status}: {body[:120]}"
+                        print(f"[MAX send_document] {resp.status}: {body}", flush=True)
                         return None
-        except Exception as e:
-            print(f"[MAX send_document] {e}")
-            return None
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+                print(f"[MAX send_document] {e}", flush=True)
+                return None
+        self.last_error = "файл так и не обработался на стороне MAX (not.ready)"
+        print("[MAX send_document] файл так и не обработался", flush=True)
+        return None

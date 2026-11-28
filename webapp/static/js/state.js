@@ -1,7 +1,7 @@
 // static/js/state.js — единственное место, где живёт состояние приложения.
 import { MAX_SELECTED_CLIPS, DEFAULT_COLOR } from './config.js';
 
-const STYLE_KEY = 'clip_style';   // цвет/анимация/субтитры/формат — помним между визитами
+const STYLE_KEY = 'clip_style';   // цвет/анимация/субтитры/формат/расположение — помним между визитами
 
 export class AppState {
   constructor() {
@@ -9,7 +9,9 @@ export class AppState {
     this.job = null;         // текущая задача с сервера
     this.sel = new Set();    // номера отмеченных клипов
     this.subs = true;        // накладывать субтитры
-    this.vert = false;       // формат 9:16
+    this.vert = false;       // 9:16 (производный от fmt — оставлен для старого сохранённого стиля)
+    this.fmt = 'source';     // формат: 'source' | 'vert' (9:16) | 'tiktok' (вебка сверху + стрим снизу)
+    this.pos = 'bottom';     // расположение субтитров: 'bottom' | 'middle' | 'top'
     this.color = DEFAULT_COLOR;   // цвет плашки субтитров
     this.anim = true;        // анимированные субтитры (караоке-вылет слов)
     this.tab = 'home';       // 'home' | 'profile'
@@ -25,14 +27,23 @@ export class AppState {
       if (typeof s.color === 'string') this.color = s.color;
       if (typeof s.anim === 'boolean') this.anim = s.anim;
       if (typeof s.subs === 'boolean') this.subs = s.subs;
-      if (typeof s.vert === 'boolean') this.vert = s.vert;
+      if (typeof s.fmt === 'string') this.fmt = s.fmt;
+      else if (s.vert === true) this.fmt = 'vert';   // старые сохранёнки знали только vert
+      if (typeof s.pos === 'string') this.pos = s.pos;
+      this._normalizeFmt();
     } catch (_) { /* первый запуск или чужой localStorage */ }
+  }
+
+  _normalizeFmt() {
+    if (!['source', 'vert', 'tiktok'].includes(this.fmt)) this.fmt = 'source';
+    this.vert = this.fmt === 'vert';
+    if (!['bottom', 'middle', 'top'].includes(this.pos)) this.pos = 'bottom';
   }
 
   saveStyle() {
     try {
       localStorage.setItem(STYLE_KEY, JSON.stringify(
-        { color: this.color, anim: this.anim, subs: this.subs, vert: this.vert }));
+        { color: this.color, anim: this.anim, subs: this.subs, fmt: this.fmt, pos: this.pos }));
     } catch (_) { /* приватный режим — просто не запоминаем */ }
   }
 

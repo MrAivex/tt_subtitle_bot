@@ -13,6 +13,7 @@ import { Gallery } from './gallery.js';
 import { Downloader } from './downloader.js';
 import { ActionBar } from './actionbar.js';
 import { HomeView, BusyView, ErrorView, ResultsView, ProfileView } from './views/index.js';
+import { KINDS_KEY } from './views/home_view.js';
 
 export class App {
   /** @param {{ state: AppState, api: Api, platform: string }} deps */
@@ -64,7 +65,15 @@ export class App {
         this.resultsView.renderOptions();
       },
       fmt: () => {
-        state.vert = !state.vert;
+        const order = ['source', 'vert', 'tiktok'];   // исходный → 9:16 → TikTok (вебка сверху)
+        state.fmt = order[(order.indexOf(state.fmt) + 1) % order.length];
+        state.vert = state.fmt === 'vert';
+        state.saveStyle();
+        this.resultsView.renderOptions();
+      },
+      pos: () => {                                   // расположение субтитров: низ → центр → верх
+        const order = ['bottom', 'middle', 'top'];
+        state.pos = order[(order.indexOf(state.pos) + 1) % order.length];
         state.saveStyle();
         this.resultsView.renderOptions();
       },
@@ -89,6 +98,7 @@ export class App {
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('change', (e) => {
       if (e.target.id === 'file' && e.target.files[0]) this.uploadFile(e.target.files[0]);
+      if (e.target.closest('.cats')) this._saveKinds();     // выбор типов моментов — в localStorage
     });
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.poller.active) this.tick();
@@ -204,6 +214,11 @@ export class App {
     return [...document.querySelectorAll('.cats input:checked')].map((c) => c.dataset.kind);
   }
 
+  /** Выбор типов моментов не должен слетать при перезагрузке страницы. */
+  _saveKinds() {
+    try { localStorage.setItem(KINDS_KEY, JSON.stringify(this._readKinds())); } catch (_) { /* приватный режим */ }
+  }
+
   async startScan(url, kinds) {
     try {
       this.adoptJob(await this.api.scan(url, kinds));
@@ -263,7 +278,8 @@ export class App {
     const s = this.state;
     for (const i of idxs) {
       try {
-        s.job = await this.api.prepare(s.job.id, i, s.subs, s.vert, s.color, s.anim);
+        s.job = await this.api.prepare(s.job.id, i, s.subs, s.fmt === 'vert', s.color, s.anim,
+          s.pos, s.fmt);
       } catch (e) {
         this.toast.show(e.message);
         break;

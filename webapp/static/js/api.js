@@ -75,9 +75,9 @@ export class Api {
   job(id) { return this.request('/jobs/' + id); }
   scan(url, kinds) { return this.request('/scan', 'POST', { url, kinds }); }
   cancel(id) { return this.request(`/jobs/${id}/cancel`, 'POST'); }
-  prepare(id, idx, subtitles, vertical, color, animated) {
+  prepare(id, idx, subtitles, vertical, color, animated, pos = 'bottom', layout = 'source') {
     return this.request(`/jobs/${id}/prepare`, 'POST',
-      { idx, subtitles, vertical, color: color || '', animated });
+      { idx, subtitles, vertical, layout, pos, color: color || '', animated });
   }
 
   // ---------- профиль ----------

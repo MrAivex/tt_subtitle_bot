@@ -17,7 +17,8 @@ VIDEO_EXT = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
 
 class ClipsHandlers:
-    def __init__(self, jobs, billing, scan, render, signer, ffmpeg, downloader):
+    def __init__(self, jobs, billing, scan, render, signer, ffmpeg, downloader,
+                 delivery=None):
         self._jobs = jobs
         self._billing = billing
         self._scan = scan
@@ -25,6 +26,7 @@ class ClipsHandlers:
         self._signer = signer
         self._ffmpeg = ffmpeg
         self._dl = downloader
+        self._delivery = delivery
 
     def routes(self):
         return [
@@ -35,6 +37,7 @@ class ClipsHandlers:
             web.post("/jobs/{id}/prepare", self.prepare),
             web.get("/jobs/{id}/preview/{idx}", self.preview),
             web.get("/jobs/{id}/download/{idx}", self.download),
+            web.post("/jobs/{id}/deliver", self.deliver),
             web.post("/jobs/{id}/cancel", self.cancel),
         ]
 
@@ -164,3 +167,42 @@ class ClipsHandlers:
         disp = f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(r['name'])}"
         return web.FileResponse(r["path"], headers={
             "Content-Disposition": disp, "Cache-Control": "no-store"})
+
+    async def deliver(self, request):
+        """Готовые клипы — документом в чат MAX (большая кнопка «Скачать» в миниapp).
+
+        Каждый запрос шлёт файлы заново: повторное нажатие — повторная отправка.
+        """
+        job = self._job(request)
+        idxs = self._ready_idxs(job, (await request.json()).get("idxs") or [])
+        if not idxs:
+            raise ApiError("Нет готовых файлов — сначала подготовь клипы", 409)
+        if self._delivery is None:
+            raise ApiError("Доставка в чат не настроена", 500)
+
+        async def _run():
+            for idx in idxs:
+                r = job.renders.get(idx) or {}
+                m = job.moments[idx] or {}
+                await self._delivery.deliver(job.chat_id, r.get("path", ""),
+                                            r.get("name", ""), m.get("label", ""))
+
+        spawn(_run())
+        return web.json_response({"ok": True, "queued": len(idxs)})
+
+    @staticmethod
+    def _ready_idxs(job, raw) -> list:
+        """Из запрошенных номеров — валидные: клип существует, рендер готов, файл на диске."""
+        out = []
+        for x in raw if isinstance(raw, list) else []:
+            try:
+                idx = int(x)
+            except (TypeError, ValueError):
+                continue
+            if idx == FULL_VIDEO or idx in out:
+                continue
+            r = job.renders.get(idx)
+            if 0 <= idx < len(job.moments) and r and r.get("status") == "ready" \
+                    and os.path.exists(r.get("path", "")):
+                out.append(idx)
+        return out

@@ -37,6 +37,28 @@ CANCELLED: set = set()
 
 FRAG_CONC = int(os.getenv("FRAG_CONC", "32"))
 
+# Ошибки, при которых скачивание стоит пробовать снова: падение фрагментов
+# («…part-Frag8»), Errno 2 по недокачанным файлам, сетевые сбои, троттлинг CDN.
+# Постоянные сбои (видео удалено/приватное/гео-блок) под эти подписи не
+# подпадают и повторяться не будут.
+_TRANSIENT_MARKS = (
+    "frag",                # «fragment» и реальные тексты «…xxx.part-Frag8»
+    "no such file", "errno 2", "enoent",
+    "unable to download",  # UnavailableVideoError: Unable to download video: …
+    "timed out", "timeout", "connection", "network", "reset by peer",
+    "temporarily", "incomplete", "throttled",
+    "429", "403", "500", "502", "503",
+)
+
+
+def _clean_partials(stem: str) -> None:
+    """Стираем хвосты прошлых попыток: .part, .part-Frag*, .ytdl и недокачанный файл."""
+    for p in glob.glob(glob.escape(stem) + "*"):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
 
 class _QuietLogger:
     """Глушит сообщения yt-dlp (предупреждения о пуле соединений и т.п.), ошибки оставляет."""
@@ -68,31 +90,60 @@ def _needs_proxy(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
 def _apply_safe(opts: dict, safe: bool):
-    """Запасной режим: HLS качает ffmpeg, фрагменты по одному."""
+    """Запасной режим: фрагменты последовательно, HLS и DASH качает ffmpeg, ждём дольше.
+
+    ВАЖНО: hls_prefer_native в свежих yt-dlp игнорируется, поэтому основа —
+    external_downloader: по ключу «m3u8» (HLS) ffmpeg качает поток целиком
+    одной командой без .part-Frag файлов, «dash» покрывает DASH-манифесты
+    (если ffmpeg его не берёт — молча остаётся нативный загрузчик).
+    """
     if safe:
         opts["concurrent_fragment_downloads"] = 1
+        opts["external_downloader"] = {"m3u8": "ffmpeg", "dash": "ffmpeg"}
         opts["hls_prefer_native"] = False
-        opts["external_downloader"] = {"m3u8": "ffmpeg"}
+        opts["socket_timeout"] = 30
+        opts["retries"] = 10
+        opts["fragment_retries"] = 25
 
 
 def _retry_fragments(fn, stem, *args):
+    """Три попытки: обычная → безопасная (через 4 с) → безопасная (через 12 с).
+
+    Раньше ловили только yt_dlp.utils.DownloadError со словом «frag», но
+    падение фрагмента на самом деле выходит наружу как UnavailableVideoError
+    («Unable to download video: [Errno 2] … .part-Frag8») — а это НЕ наследник
+    DownloadError, поэтому защитный повтор просто не срабатывал. Теперь ловим
+    всю иерархию YoutubeDLError (DownloadError, UnavailableVideoError,
+    ThrottledDownloadError…) плюс OSError: перед каждой попыткой чистим
+    хвосты .part-* и качаем заново, во 2-й и 3-й раз — в безопасном режиме
+    (фрагменты последовательно, HLS/DASH через ffmpeg).
+    """
     import yt_dlp
-    try:
-        return fn(*args)
-    except yt_dlp.utils.DownloadError as e:
-        # Смотрим на «frag»: покрывает и слово fragment, и реальные тексты вида
-        # «[Errno 2] Нет такого файла …xxx.part-Frag5» (yt-dlp при падении фрагмента
-        # кидает FileNotFoundError по имени куска — слова «fragment» в нём нет,
-        # поэтому раньше такой сбой не попадал в безопасный повтор).
-        if "frag" not in str(e).lower():
-            raise
-        logger.warning(f"[LINK] ошибка фрагментов, повторяю через ffmpeg: {str(e)[:150]}")
-        for p in glob.glob(glob.escape(stem) + "*"):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-        return fn(*args, True)
+    catch = tuple(x for x in (
+        getattr(yt_dlp.utils, "YoutubeDLError", None),
+        getattr(yt_dlp.utils, "DownloadError", None),
+        getattr(yt_dlp.utils, "UnavailableVideoError", None),
+        OSError,
+    ) if x is not None)
+    pauses = (0, 4, 12)
+    last = None
+    for attempt, pause in enumerate(pauses, 1):
+        if pause:
+            time.sleep(pause)
+        try:
+            os.makedirs(os.path.dirname(stem) or ".", exist_ok=True)
+        except OSError:
+            pass
+        _clean_partials(stem)
+        try:
+            return fn(*args, attempt > 1)
+        except catch as e:
+            last = e
+            if not any(mark in str(e).lower() for mark in _TRANSIENT_MARKS):
+                raise
+            logger.warning(f"[LINK] попытка {attempt}/{len(pauses)} не удалась: {str(e)[:150]}")
+    logger.error(f"[LINK] не скачалось за {len(pauses)} попытки: {str(last)[:150]}")
+    raise last
 
 
 def _final_path(ydl, info, stem: str) -> str:

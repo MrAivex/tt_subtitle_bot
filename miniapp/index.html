@@ -4,9 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Хайлайты</title>
-<script src="https://st.max.ru/js/max-web-app.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" rel="stylesheet">
+<!-- SDK MAX — локальная копия (/static/vendor/miniapp-sdk.js). Раньше грузился с
+     st.max.ru: где домен недоступен, страница висела и таймаутилась. Локальный
+     адаптер читает initData из hash (WebAppData) так же, как официальный SDK. -->
+<script defer src="/static/vendor/miniapp-sdk.js"></script>
+<!-- Шрифты Google — НЕ блокируют отрисовку (media="print" + onload): если
+     fonts.googleapis.com недоступен — остаёмся на system-ui без висящей страницы. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap"></noscript>
 <!-- Порядок важен: это тот же порядок правил, что был в одном <style>. -->
 <link rel="stylesheet" href="/static/css/base.css">
 <link rel="stylesheet" href="/static/css/mascot.css">

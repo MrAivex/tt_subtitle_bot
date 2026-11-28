@@ -2,8 +2,10 @@
 
 Так фронт остаётся в одном экземпляре: правишь miniapp/index.html — меняется и MAX, и TG.
 Что меняется:
-  1) вместо SDK MAX подключается telegram-web-app.js; window.WebApp = Telegram.WebApp
-     (у него те же ready / initData / openLink, остальной JS работает как есть);
+  1) window.WebApp = Telegram.WebApp — SDK Telegram уже подгружен локально
+     (/static/vendor/miniapp-sdk.js читает tgWebAppData из hash так же, как официальный SDK;
+     внешний https://telegram.org/js/telegram-web-app.js больше НЕ подключаем —
+     в РФ он недоступен с ряда провайдеров, и страница висела до ERR_TIMED_OUT);
   2) на весь экран и без закрытия свайпом вниз (иначе перемотка плеера сворачивает апп);
   3) скачивание: <a download> внутри Telegram-WebView не работает → WebApp.downloadFile
      (Bot API 8.0+), на старых клиентах — открытие ссылки во внешнем браузере.
@@ -11,8 +13,8 @@
 
 MAX_SDK = '<script src="https://st.max.ru/js/max-web-app.js"></script>'
 
-TG_HEAD = """<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
+TG_HEAD = """<script>
+/* Telegram: SDK уже есть локально (vendor/miniapp-sdk.js), внешний скрипт не нужен. */
 window.WebApp=window.Telegram&&window.Telegram.WebApp;
 try{var _w=window.WebApp;_w.ready();_w.expand();if(_w.disableVerticalSwipes)_w.disableVerticalSwipes()}catch(e){}
 </script>"""
@@ -46,7 +48,6 @@ TG_TAIL = """<script>
 
 def patch_for_telegram(html: str) -> str:
     if MAX_SDK in html:
-        html = html.replace(MAX_SDK, TG_HEAD, 1)
-    else:                                   # SDK-тег поменяли — просто вставим в <head>
-        html = html.replace("</head>", TG_HEAD + "\n</head>", 1)
-    return html.replace("</body>", TG_TAIL + "\n</body>", 1)
+        html = html.replace(MAX_SDK, "", 1)          # старый index с внешним SDK — убираем
+    return html.replace("</body>", TG_TAIL + "\n</body>", 1).replace(
+        "</head>", TG_HEAD + "\n</head>", 1)

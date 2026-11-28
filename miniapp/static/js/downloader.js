@@ -1,7 +1,6 @@
-// static/js/downloader.js — скачивание готовых клипов.
-import { DOWNLOAD_GAP_MS } from './config.js';
-import { sleep } from './utils.js';
-
+// static/js/downloader.js — готовые клипы документом в чат MAX.
+// <a download> в вебвью MAX уводит на сайт, поэтому большая кнопка «Скачать»
+// шлёт файлы сообщением в чат; повторное нажатие присылает их заново.
 export class Downloader {
   constructor({ state, api, toast }) {
     this._state = state;
@@ -9,24 +8,14 @@ export class Downloader {
     this._toast = toast;
   }
 
-  /** Один клип: невидимая ссылка с атрибутом download. */
-  one(i) {
-    const r = this._state.renders[String(i)];
-    if (!r || r.status !== 'ready') return;
-    const a = document.createElement('a');
-    a.href = this._api.mediaUrl(this._state.job, 'download', i);
-    a.download = r.name || `clip_${i + 1}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }
-
-  /** Несколько клипов подряд: браузеры не любят пачку загрузок одновременно. */
+  /** Большая кнопка «Скачать»: файлы приходят сообщением в чат. */
   async many(idxs) {
-    this._toast.show('Сохраняю файлы по очереди');
-    for (const i of idxs) {
-      this.one(i);
-      await sleep(DOWNLOAD_GAP_MS);
+    if (!idxs || !idxs.length) return;
+    this._toast.show('Отправляю в чат — файлы придут сообщениями');
+    try {
+      await this._api.deliver(this._state.job.id, idxs);
+    } catch (e) {
+      this._toast.show(e.message);
     }
   }
 }

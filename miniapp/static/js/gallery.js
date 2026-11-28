@@ -1,4 +1,5 @@
-// static/js/gallery.js — сетка плиток с моментами: выбор сердечком, скачивание, открытие в плеере.
+// static/js/gallery.js — сетка плиток с моментами: выбор сердечком, открытие в плеере.
+// Скачивание — только сердечко + большая кнопка внизу.
 import { $, esc, fmt } from './utils.js';
 
 export class Gallery {
@@ -6,16 +7,14 @@ export class Gallery {
    * @param {object}         deps
    * @param {AppState}       deps.state
    * @param {ThumbnailCache} deps.thumbs
-   * @param {Downloader}     deps.downloader
    * @param {Toast}          deps.toast
    * @param {() => number}   deps.getCurrent — какой клип сейчас в плеере
    * @param {(i) => void}    deps.onOpen     — открыть клип i в плеере
    * @param {(i) => void}    deps.onToggle   — отметить/снять клип i
    */
-  constructor({ state, thumbs, downloader, toast, getCurrent, onOpen, onToggle }) {
+  constructor({ state, thumbs, toast, getCurrent, onOpen, onToggle }) {
     this._state = state;
     this._thumbs = thumbs;
-    this._downloader = downloader;
     this._toast = toast;
     this._getCurrent = getCurrent;
     this._onOpen = onOpen;
@@ -57,9 +56,6 @@ export class Gallery {
     const chk = e.target.closest('.chk');
     if (chk) { this._onToggle(+chk.dataset.chk); return true; }   // сердечко: только выбор, плеер не трогаем
 
-    const dl = e.target.closest('.rdy');
-    if (dl) { this._downloader.one(+dl.dataset.dl); return true; }
-
     const tile = e.target.closest('.tile');
     if (tile) {                                                   // плитка вне сердечка: показать в плеере
       const i = +tile.dataset.i;
@@ -87,14 +83,12 @@ export class Gallery {
 
   _tile(m, i, cur) {
     const s = this._state;
-    const r = s.renders[String(i)];
     return `<div class="tile ${s.sel.has(i) ? 'sel' : ''} ${cur === i ? 'cur' : ''}" data-i="${i}" data-k="${m.kind || 'hype'}">
       ${this._cover(i)}
       <span class="no">${i + 1} ${esc(m.emoji || '')}</span>
       <button class="chk ${s.sel.has(i) ? 'on' : ''}" data-chk="${i}" aria-label="Выбрать">♥</button>
       <span class="dur">${fmt(m.end - m.start)}</span>
-      ${r && r.status === 'ready' ? `<button class="rdy" data-dl="${i}" aria-label="Скачать">⬇</button>` : ''}
-      ${r && r.status === 'pending' ? '<span class="pend"><span class="spin"></span></span>' : ''}
+      ${(s.renders[String(i)] || {}).status === 'pending' ? '<span class="pend"><span class="spin"></span></span>' : ''}
     </div>`;
   }
 }

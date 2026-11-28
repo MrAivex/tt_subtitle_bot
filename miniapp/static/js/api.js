@@ -37,6 +37,8 @@ export class Api {
   prepare(id, idx, subtitles, vertical) {
     return this.request(`/jobs/${id}/prepare`, 'POST', { idx, subtitles, vertical });
   }
+  /** Готовые клипы — документом в чат MAX (можно дёргать повторно). */
+  deliver(id, idxs) { return this.request(`/jobs/${id}/deliver`, 'POST', { idxs }); }
 
   // ---------- профиль ----------
   me() { return this.request('/me'); }

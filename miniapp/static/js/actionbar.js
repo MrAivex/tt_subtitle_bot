@@ -1,4 +1,5 @@
 // static/js/actionbar.js — большая нижняя кнопка: «Подготовить» → «Готовлю…» → «Скачать».
+// Кнопка шлёт готовые клипы сообщением в чат; повторный клик — повторная отправка.
 import { $, etaText } from './utils.js';
 
 export class ActionBar {
@@ -41,7 +42,7 @@ export class ActionBar {
       const left = Math.max(0, ...idxs.map((i) => (rs[String(i)] || {}).eta_left || 0));
       this._set(b, true, '<span class="spin"></span> Готовлю… ' + (left ? etaText(left) : ''), 'wait');
     } else if (st.every((x) => x === 'ready')) {
-      this._set(b, false, `⬇ Скачать выбранные: ${idxs.length}`, 'dl');
+      this._set(b, false, `⬇ Прислать в чат: ${idxs.length}`, 'dl');
     } else if (st.some((x) => x === 'error')) {
       this._set(b, false, `↻ Повторить: ${idxs.length}`, 'prep');
     } else {
@@ -59,6 +60,6 @@ export class ActionBar {
     const mode = this._btn.dataset.m;
     const idxs = this._state.selectedSorted();
     if (mode === 'prep') await this._onPrepare(idxs);
-    else if (mode === 'dl') this._downloader.many(idxs);
+    else if (mode === 'dl') this._downloader.many(idxs);   // файлы придут в чат
   }
 }

@@ -133,7 +133,7 @@ class WebClipsHandlers:
         return web.json_response(self._pub(job))
 
     async def active(self, request):
-        job = self._jobs.latest_for(request["uid"])
+        job = self._jobs.latest_for(request["uid"]
         if job and job.status == "error":
             if job.seen:
                 job = None
@@ -175,9 +175,18 @@ class WebClipsHandlers:
         # цвет плашки субтитров («#RRGGBB») и режим: анимированные или обычные
         color = (body.get("color") or "").strip()
         animated = body.get("animated", True)
+        # формат кадра: source | vert (9:16) | tiktok (вебка сверху + стрим снизу)
+        layout = (body.get("layout") or "").strip().lower()
+        if layout not in ("source", "vert", "tiktok"):
+            layout = "vert" if body.get("vertical", False) else "source"
+        # расположение субтитров: bottom | middle | top
+        pos = (body.get("pos") or "bottom").strip().lower()
+        if pos not in ("bottom", "middle", "top"):
+            pos = "bottom"
         spawn(self._render.run(job, idx, bool(body.get("subtitles", True)),
-                               bool(body.get("vertical", False)),
-                               color=color, animated=bool(animated)))
+                               layout == "vert",
+                               color=color, animated=bool(animated),
+                               pos=pos, layout=layout))
         return web.json_response(self._pub(job))
 
     # ---------- файлы ----------
@@ -191,7 +200,7 @@ class WebClipsHandlers:
 
     async def download(self, request):
         job = self._job(request)
-        idx = int(request.match_info["idx"])
+        idx = int(request.match_info["idx"]
         r = job.renders.get(idx)
         if not r or r["status"] != "ready" or not os.path.exists(r.get("path", "")):
             raise ApiError("Файл ещё не готов", 404)

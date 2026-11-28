@@ -10,6 +10,7 @@ faster-whisper>=1.0.0
 av>=12.3.0
 Pillow>=10.0.0
 numpy>=1.26.0
+opencv-python-headless>=4.8.0   # поиск веб-камеры для формата TikTok (опционально: без него — кроп 9:16)
 requests>=2.31.0
 urllib3>=2.0.0
 yt-dlp

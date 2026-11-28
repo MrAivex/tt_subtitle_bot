@@ -1,6 +1,6 @@
 // static/js/gallery.js — сетка плиток с моментами: группы по типам, выбор сердечком,
 // скачивание, открытие в плеере.
-import { $, esc, fmt } from '../utils.js';
+import { $, esc, fmt } from './utils.js';
 
 // порядок и подписи групп; kind приходит с сервера (fight/funny/talk + старые типы)
 const KIND_ORDER = ['fight', 'funny', 'talk'];

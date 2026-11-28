@@ -28,7 +28,7 @@ export class App {
     this.poller = new Poller(() => this.tick());
 
     // ---- компоненты результата (связаны друг с другом только через колбэки) ----
-    const downloader = new Downloader({ state, api, toast: this.toast });
+    const downloader = new Downloader({ state, api, toast: this.toast, platform });
     this.thumbs = new ThumbnailCache({ state, api, onUpdate: () => this.gallery.update() });
     this.player = new Player({
       state, api,
@@ -36,12 +36,12 @@ export class App {
       onClipChange: () => this.gallery.update(),
     });
     this.gallery = new Gallery({
-      state, downloader, thumbs: this.thumbs, toast: this.toast,
+      state, thumbs: this.thumbs, toast: this.toast,
       getCurrent: () => this.player.cur,
       onOpen: (i) => { if (this.player.cur !== i) this.player.load(i); },
       onToggle: (i) => this.toggleSelection(i),
     });
-    this.actionBar = new ActionBar({ state, downloader, onPrepare: (idxs) => this.prepare(idxs) });
+    this.actionBar = new ActionBar({ state, downloader, platform, onPrepare: (idxs) => this.prepare(idxs) });
 
     // ---- экраны ----
     const ctx = {
@@ -204,9 +204,8 @@ export class App {
   onScanClick() {
     const url = $('#url').value.trim();
     if (!url) return this.toast.show('Вставь ссылку');
-    const kinds = this._readKinds();
-    if (!kinds.length) return this.toast.show('Отметь хотя бы один тип моментов');
-    return this.startScan(url, kinds);
+    // пустой выбор категорий — не ошибка: ищем «как раньше» (авто-режим)
+    return this.startScan(url, this._readKinds());
   }
 
   /** Выбранные типы моментов на стартовом экране (чекбоксы). */
@@ -232,8 +231,7 @@ export class App {
 
   async uploadFile(file) {
     const s = this.state;
-    const kinds = this._readKinds();
-    if (!kinds.length) return this.toast.show('Отметь хотя бы один тип моментов');
+    const kinds = this._readKinds();      // пусто — тоже нормально: авто-режим
     s.up = { pct: 0, abort: null };
     this.mascot.reset();
     this.paint();

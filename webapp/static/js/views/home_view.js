@@ -39,6 +39,7 @@ export class HomeView extends View {
   <div class="cats">${CATS.map((c) => `
     <label class="cat"><input type="checkbox" data-kind="${c.kind}"${savedKinds().has(c.kind) ? ' checked' : ''}>
       <span><i>${c.emoji}</i> ${c.title}<small>${c.hint}</small></span></label>`).join('')}
-  </div>`;
+  </div>
+  <p class="sub">Ничего не отмечено — просто найду самые яркие моменты ✦</p>`;
   }
 }

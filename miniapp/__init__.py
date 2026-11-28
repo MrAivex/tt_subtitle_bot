@@ -8,6 +8,7 @@ from config import MAX_TOKEN, MAX_HIGHLIGHTS, MAX_FULL_VIDEO_SEC, RENDER_SLOTS
 from .auth import InitDataValidator, MediaTokenSigner, auth_tokens
 from .billing import Billing
 from .clips_handlers import ClipsHandlers
+from .delivery import MaxDelivery
 from .jobs import JobStore
 from .middleware import make_middleware
 from .preview_service import PreviewService
@@ -39,8 +40,10 @@ def register_miniapp(app: web.Application, *, ffmpeg, analyzer, renderer, downlo
     previews = PreviewService(ffmpeg)
     scan = ScanService(analyzer, previews, MAX_HIGHLIGHTS, ffmpeg)
     render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC, slots=RENDER_SLOTS)
+    delivery = MaxDelivery()          # большая кнопка «Скачать» шлёт готовые клипы в чат
 
-    clips = ClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader)
+    clips = ClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader,
+                          delivery=delivery)
     profile = ProfileHandlers(billing)
 
     api = web.Application(middlewares=[make_middleware(validator, signer, jobs, debug)],

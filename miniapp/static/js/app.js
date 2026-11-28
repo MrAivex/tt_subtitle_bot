@@ -34,7 +34,7 @@ export class App {
       onClipChange: () => this.gallery.update(),
     });
     this.gallery = new Gallery({
-      state, downloader, thumbs: this.thumbs, toast: this.toast,
+      state, thumbs: this.thumbs, toast: this.toast,
       getCurrent: () => this.player.cur,
       onOpen: (i) => { if (this.player.cur !== i) this.player.load(i); },
       onToggle: (i) => this.toggleSelection(i),

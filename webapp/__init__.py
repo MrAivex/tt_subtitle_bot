@@ -64,7 +64,8 @@ def register_webapp(app: web.Application, *, ffmpeg, analyzer, renderer, downloa
     render = RenderService(renderer, ffmpeg, billing, MAX_FULL_VIDEO_SEC,
                             slots=RENDER_SLOTS, on_ready=_deliver)
 
-    clips = WebClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader)
+    clips = WebClipsHandlers(jobs, billing, scan, render, signer, ffmpeg, downloader,
+                             delivery=delivery)
     profile = WebProfileHandlers(billing)
     site = SiteHandlers(sessions)
 

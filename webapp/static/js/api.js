@@ -79,6 +79,8 @@ export class Api {
     return this.request(`/jobs/${id}/prepare`, 'POST',
       { idx, subtitles, vertical, layout, pos, color: color || '', animated });
   }
+  /** Готовые клипы — документом в чат мессенджера (можно дёргать повторно). */
+  deliver(id, idxs) { return this.request(`/jobs/${id}/deliver`, 'POST', { idxs }); }
 
   // ---------- профиль ----------
   me() { return this.request('/me'); }

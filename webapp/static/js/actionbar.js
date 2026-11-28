@@ -1,4 +1,5 @@
 // static/js/actionbar.js — большая нижняя кнопка: «Подготовить» → «Готовлю…» → «Скачать».
+// В миниapp файлы приходят сообщением в чат (кнопка шлёт в чат, повторный клик — повторная отправка).
 import { $, etaText } from './utils.js';
 
 export class ActionBar {
@@ -6,12 +7,14 @@ export class ActionBar {
    * @param {object}     deps
    * @param {AppState}   deps.state
    * @param {Downloader} deps.downloader
+   * @param {string}     deps.platform — 'max' | 'tg' | 'site' (подпись кнопки)
    * @param {(idxs: number[]) => Promise<void>} deps.onPrepare — запустить рендер выбранных клипов
    */
-  constructor({ state, downloader, onPrepare }) {
+  constructor({ state, downloader, onPrepare, platform = 'max' }) {
     this._state = state;
     this._downloader = downloader;
     this._onPrepare = onPrepare;
+    this._platform = platform;
     this._bar = $('#actbar');
     this._btn = $('#big');
     this._btn.onclick = () => this._click();
@@ -41,7 +44,8 @@ export class ActionBar {
       const left = Math.max(0, ...idxs.map((i) => (rs[String(i)] || {}).eta_left || 0));
       this._set(b, true, '<span class="spin"></span> Готовлю… ' + (left ? etaText(left) : ''), 'wait');
     } else if (st.every((x) => x === 'ready')) {
-      this._set(b, false, `⬇ Скачать выбранные: ${idxs.length}`, 'dl');
+      const verb = this._platform === 'site' ? 'Скачать' : 'Прислать в чат';
+      this._set(b, false, `⬇ ${verb}: ${idxs.length}`, 'dl');
     } else if (st.some((x) => x === 'error')) {
       this._set(b, false, `↻ Повторить: ${idxs.length}`, 'prep');
     } else {

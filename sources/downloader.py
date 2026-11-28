@@ -35,7 +35,18 @@ TITLES: dict = {}
 PROGRESS: dict = {}   # url -> "37%"
 CANCELLED: set = set()
 
-FRAG_CONC = int(os.getenv("FRAG_CONC", "32"))
+# 2026-11-28: по умолчанию 1 (последовательные фрагменты). При
+# concurrent_fragment_downloads > 1 в yt-dlp есть гонка: неудавшийся воркер
+# возвращает «протухшее» имя уже слитого и удалённого фрагмента (.part-FragN),
+# и весь файл падает с Errno 2 по уже несуществующему пути. Плюс 32
+# одновременных соединения через один прокси — сами по себе главный источник
+# сбоев фрагментов. Поднимать значение — осознанно (env FRAG_CONC).
+FRAG_CONC = int(os.getenv("FRAG_CONC", "1"))
+
+# Жёсткий лимит времени (сек) на ОДНУ попытку скачивания из лестницы ретраев,
+# чтобы задача не могла висеть бесконечно. По истечении progress-хук
+# поднимает KeyboardInterrupt и мы переходим к следующей попытке. 0 = выкл.
+_DL_DEADLINE = float(os.getenv("DL_DEADLINE", "1200"))
 
 # Ошибки, при которых скачивание стоит пробовать снова: падение фрагментов
 # («…part-Frag8»), Errno 2 по недокачанным файлам, сетевые сбои, троттлинг CDN.
@@ -52,8 +63,18 @@ _TRANSIENT_MARKS = (
 
 
 def _clean_partials(stem: str) -> None:
-    """Стираем хвосты прошлых попыток: .part, .part-Frag*, .ytdl и недокачанный файл."""
-    for p in glob.glob(glob.escape(stem) + "*"):
+    """Стираем хвосты прошлых попыток ТОЛЬКО этого stem: сам файл, .part,
+    .part-Frag*, .ytdl, промежуточные .f*.* и готовые файлы других расширений.
+
+    Раньше чистили глобом «stem*» — он задевал чужие файлы с общим префиксом
+    (stem «clip_..._1» совпадал с «clip_..._12.mp4»), и уборка одного клипа
+    могла удалять соседний, ломая его скачивание с тем же Errno 2.
+    """
+    victims = set()
+    if os.path.exists(stem):
+        victims.add(stem)
+    victims.update(glob.glob(glob.escape(stem) + ".*"))
+    for p in victims:
         try:
             os.remove(p)
         except OSError:
@@ -90,33 +111,32 @@ def _needs_proxy(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in PROXY_DOMAINS)
 
 def _apply_safe(opts: dict, safe: bool):
-    """Запасной режим: фрагменты последовательно, HLS и DASH качает ffmpeg, ждём дольше.
+    """Запасной режим: ТОЛЬКО нативный загрузчик, строго последовательные
+    фрагменты и короткие таймауты, чтобы попытка гарантированно завершалась.
 
-    ВАЖНО: hls_prefer_native в свежих yt-dlp игнорируется, поэтому основа —
-    external_downloader: по ключу «m3u8» (HLS) ffmpeg качает поток целиком
-    одной командой без .part-Frag файлов, «dash» покрывает DASH-манифесты
-    (если ffmpeg его не берёт — молча остаётся нативный загрузчик).
+    ffmpeg как внешний загрузчик (external_downloader m3u8/dash) здесь НЕЛЬЗЯ:
+    yt-dlp передаёт прокси ffmpeg лишь переменными окружения HTTP_PROXY/
+    http_proxy, а ffmpeg их ИГНОРИРУЕТ для https:// — ходит напрямую, минуя
+    прокси, ловит сброс (GnuTLS «End of file») и с флагами reconnect крутится
+    бесконечно, без прогресса и таймаута. Именно это зависало на «4%».
     """
     if safe:
         opts["concurrent_fragment_downloads"] = 1
-        opts["external_downloader"] = {"m3u8": "ffmpeg", "dash": "ffmpeg"}
-        opts["hls_prefer_native"] = False
         opts["socket_timeout"] = 30
-        opts["retries"] = 10
-        opts["fragment_retries"] = 25
+        opts["retries"] = 8
+        opts["fragment_retries"] = 15
 
 
 def _retry_fragments(fn, stem, *args):
     """Три попытки: обычная → безопасная (через 4 с) → безопасная (через 12 с).
 
-    Раньше ловили только yt_dlp.utils.DownloadError со словом «frag», но
-    падение фрагмента на самом деле выходит наружу как UnavailableVideoError
-    («Unable to download video: [Errno 2] … .part-Frag8») — а это НЕ наследник
-    DownloadError, поэтому защитный повтор просто не срабатывал. Теперь ловим
-    всю иерархию YoutubeDLError (DownloadError, UnavailableVideoError,
-    ThrottledDownloadError…) плюс OSError: перед каждой попыткой чистим
-    хвосты .part-* и качаем заново, во 2-й и 3-й раз — в безопасном режиме
-    (фрагменты последовательно, HLS/DASH через ffmpeg).
+    Ловим всю иерархию YoutubeDLError (DownloadError, UnavailableVideoError,
+    ThrottledDownloadError… — падение фрагмента реально выходит как
+    UnavailableVideoError, не потомок DownloadError) плюс OSError, и отдельно
+    KeyboardInterrupt — им прерывается зависшая попытка (сторож в
+    progress-хуке). Перед каждой попыткой чистим хвосты ТОЛЬКО этого stem
+    и качаем заново; во 2-й и 3-й раз — в безопасном режиме (строго
+    последовательные фрагменты, короткие таймауты, без внешних загрузчиков).
     """
     import yt_dlp
     catch = tuple(x for x in (
@@ -137,12 +157,16 @@ def _retry_fragments(fn, stem, *args):
         _clean_partials(stem)
         try:
             return fn(*args, attempt > 1)
+        except KeyboardInterrupt as e:
+            last = e
+            logger.warning(f"[LINK] попытка {attempt}/{len(pauses)} прервана сторожем таймаута: {str(e) or 'watchdog'}")
         except catch as e:
             last = e
             if not any(mark in str(e).lower() for mark in _TRANSIENT_MARKS):
                 raise
             logger.warning(f"[LINK] попытка {attempt}/{len(pauses)} не удалась: {str(e)[:150]}")
     logger.error(f"[LINK] не скачалось за {len(pauses)} попытки: {str(last)[:150]}")
+    _clean_partials(stem)   # финально убираем хвосты последней попытки
     raise last
 
 
@@ -161,11 +185,20 @@ def _final_path(ydl, info, stem: str) -> str:
     return guess
 
 
-def _progress_hook_factory(tag: str, url: str = "", key: str = ""):
+def _progress_hook_factory(tag: str, url: str = "", key: str = "", deadline: float = 0.0):
+    """deadline (сек) — сторожевой лимит на одну попытку. По истечении хук
+    поднимает KeyboardInterrupt: yt-dlp прокидывает его наружу целиком (в
+    отличие от DownloadError, который машина ретраев фрагментов может
+    «съесть» и молча качать дальше), а лестница _retry_fragments начинает
+    следующую попытку. Так ни одна попытка не может висеть бесконечно.
+    """
+    stop_at = (time.time() + deadline) if deadline > 0 else None
     last = {"t": 0.0}
     def hook(d):
         if key and key in CANCELLED:
             raise RuntimeError("cancelled")
+        if stop_at is not None and time.time() > stop_at:
+            raise KeyboardInterrupt(f"watchdog: попытка идёт дольше {int(deadline)} с — прерываю")
         if d.get("status") != "downloading":
             return
         done = d.get("downloaded_bytes") or 0
@@ -194,7 +227,7 @@ def _ytdlp_download_sync(url: str, output_path: str, safe: bool = False) -> str:
         "fragment_retries": 10,
         "max_filesize": MAX_FILE_SIZE_BYTES,
         "concurrent_fragment_downloads": FRAG_CONC,
-        "progress_hooks": [_progress_hook_factory("video")],
+        "progress_hooks": [_progress_hook_factory("video", deadline=_DL_DEADLINE)],
         "continuedl": False,   # не продолжаем битый частичный фай
         "logger": _QuietLogger(),
     }
@@ -288,8 +321,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "socket_timeout": 15, "retries": 3,
         "fragment_retries": 10,
         "concurrent_fragment_downloads": FRAG_CONC,
-        "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
-        "progress_hooks": [_progress_hook_factory("audio", url, stem)],
+        "progress_hooks": [_progress_hook_factory("audio", url, stem, deadline=_DL_DEADLINE)],
         "continuedl": False,   # не продолжаем битый частичный файл
         "logger": _QuietLogger(),
     }
@@ -347,8 +379,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "fragment_retries": 10,
         "download_ranges": download_range_func([], [(start, end)]),
         "concurrent_fragment_downloads": FRAG_CONC,
-        "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
-        "progress_hooks": [_progress_hook_factory("clip")],
+        "progress_hooks": [_progress_hook_factory("clip", deadline=_DL_DEADLINE)],
         "continuedl": False,   # не продолжаем битый частичный файл
         "logger": _QuietLogger(),
     }

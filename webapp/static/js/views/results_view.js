@@ -5,6 +5,10 @@ import { $ } from '../utils.js';
 const HINT = 'Смотри превью, отмечай сердечками нужные — большая кнопка внизу подготовит и скачает их ♡';
 const EMPTY = 'Жду новые видео от тебя ♡';
 
+// подписи кнопок формата и расположения субтитров
+const FMT_TITLES = { source: 'исходный', vert: '9:16', tiktok: 'TikTok' };
+const POS_TITLES = { bottom: 'внизу', middle: 'по центру', top: 'вверху' };
+
 export class ResultsView extends View {
   /** @param {object} parts — { player, gallery, actionBar }: готовые компоненты, которые экран собирает вместе */
   constructor(ctx, { player, gallery, actionBar }) {
@@ -35,7 +39,7 @@ export class ResultsView extends View {
     this._actionBar.update();
   }
 
-  /** Кнопки «Субтитры / Цвет / Анимация / Формат / Новое видео». */
+  /** Кнопки «Субтитры / Цвет / Анимация / Расположение / Формат / Новое видео». */
   renderOptions() {
     const { state } = this.ctx;
     const sw = (c) => `<i class="sw" style="background:${c}"></i>`;
@@ -43,7 +47,8 @@ export class ResultsView extends View {
     <button data-a="subs" class="${state.subs ? 'on' : ''}">Субтитры: ${state.subs ? 'да' : 'нет'}</button>
     <button data-a="color">Цвет ${sw(state.color)}</button>
     <button data-a="anim" class="${state.anim ? 'on' : ''}">Анимация: ${state.anim ? 'караоке' : 'обычные'}</button>
-    <button data-a="fmt" class="${state.vert ? 'on' : ''}">Формат: ${state.vert ? '9:16' : 'исходный'}</button>
+    <button data-a="pos">Расположение: ${POS_TITLES[state.pos] || 'внизу'}</button>
+    <button data-a="fmt" class="${state.fmt !== 'source' ? 'on' : ''}" title="TikTok: вебка стримера сверху, стрим снизу — 9:16. Вебку ищем на видео автоматически; если её нет — просто обрезка в 9:16">Формат: ${FMT_TITLES[state.fmt] || 'исходный'}</button>
     <button data-a="reset">Новое видео</button>`;
   }
 

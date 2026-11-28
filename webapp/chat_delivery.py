@@ -102,6 +102,9 @@ class ChatDelivery:
                 if ok:
                     log.info(f"[DELIVERY] {plat} chat={chat_id}: {name}")
                 else:
-                    log.warning(f"[DELIVERY] {plat} chat={chat_id}: не доставился {name}")
+                    # причина — последняя ошибка клиента MAX (для TG печатается в stdout)
+                    reason = getattr(self._max, "last_error", "") if plat == "max" else ""
+                    log.warning(f"[DELIVERY] {plat} chat={chat_id}: не доставился {name}"
+                                + (f" — {reason}" if reason else ""))
             except Exception:
                 traceback.print_exc()

@@ -43,7 +43,10 @@ class RenderService:
         self._on_ready = on_ready
 
     async def run(self, job, idx: int, subs: bool, vertical: bool,
-                  color: str = None, animated: bool = True):
+                  color: str = None, animated: bool = True,
+                  pos: str = "bottom", layout: str = "source"):
+        """layout: source | vert (9:16) | tiktok (вебка сверху + стрим снизу, 1080x1920).
+        pos — расположение субтитров (bottom | middle | top)."""
         extra: list = []
         key = "full" if idx == FULL_VIDEO else "clip"
         sec = job.duration if idx == FULL_VIDEO else job.moments[idx]["end"] - job.moments[idx]["start"]
@@ -56,10 +59,10 @@ class RenderService:
                 t0 = time.time()
                 await self._charge_once(job)
                 if idx == FULL_VIDEO:
-                    job.renders[idx] = await self._full(job, vertical, extra, color, animated)
+                    job.renders[idx] = await self._full(job, vertical, extra, color, animated, pos)
                 else:
                     job.renders[idx] = await self._clip(job, idx, subs, vertical, extra,
-                                                        color, animated)
+                                                        color, animated, pos, layout)
                 eta.record(key, sec, time.time() - t0)
             job.progress = ""
             if self._on_ready is not None:
@@ -82,16 +85,25 @@ class RenderService:
             job.premium = await self._billing.charge(job.user_id, job.chat_id)
             job.charged = True
 
-    async def _clip(self, job, idx, subs, vertical, extra, color, animated) -> dict:
+    async def _clip(self, job, idx, subs, vertical, extra, color, animated,
+                    pos="bottom", layout="source") -> dict:
         m = job.moments[idx]
         job.progress = f"Клип {idx + 1}"
         clip = await job.source.cut(m["start"], m["end"], f"downloads/clip_{job.id}_{idx}.mp4")
         extra.append(clip)
         final = clip
+        if layout == "tiktok":
+            # 1080x1920 сразу: вебка сверху, стрим снизу; нет вебки — центральный кроп 9:16
+            job.progress = f"Клип {idx + 1}: раскладка TikTok"
+            tt = clip[:-4] + "_tt.mp4"
+            await asyncio.to_thread(self._ffmpeg.compose_tiktok, clip, tt)
+            extra.append(tt)
+            final = tt
+            vertical = False                      # кадр уже 9:16 — повторно не режем
         if subs:
             res = await asyncio.to_thread(
-                self._renderer.render, clip, premium=job.premium, vertical=vertical,
-                color=color, animated=animated)
+                self._renderer.render, final, premium=job.premium, vertical=vertical,
+                color=color, animated=animated, pos=pos)
             final = res.video_path
             if res.srt_path:
                 extra.append(res.srt_path)
@@ -101,7 +113,7 @@ class RenderService:
         return {"status": "ready", "path": final,
                 "name": clip_name(job.title, idx + 1), "extra": extra}
 
-    async def _full(self, job, vertical, extra, color, animated) -> dict:
+    async def _full(self, job, vertical, extra, color, animated, pos="bottom") -> dict:
         if job.duration > self._max_full_sec:
             raise ApiError(f"Видео длиннее {self._max_full_sec // 60} минут — только хайлайты")
         job.progress = "Готовлю полное видео"
@@ -111,7 +123,7 @@ class RenderService:
         job.progress = "Субтитры на всё видео"
         res = await asyncio.to_thread(
             self._renderer.render, src, premium=job.premium, vertical=vertical,
-            color=color, animated=animated)
+            color=color, animated=animated, pos=pos)
         if res.srt_path:
             extra.append(res.srt_path)
         return {"status": "ready", "path": res.video_path,

@@ -8,6 +8,14 @@ export const CATS = [
   { kind: 'talk', emoji: '💬', title: 'Разговорники', hint: '3 × до 2 мин' },
 ];
 
+// Выбор типов моментов помним между перезагрузками страницы; по умолчанию всё выключено.
+export const KINDS_KEY = 'scan_kinds';
+
+export function savedKinds() {
+  try { return new Set(JSON.parse(localStorage.getItem(KINDS_KEY) || '[]')); }
+  catch (_) { return new Set(); }
+}
+
 export class HomeView extends View {
   async render() {
     const { state, api, mascot, showError } = this.ctx;
@@ -29,7 +37,7 @@ export class HomeView extends View {
   <div class="or">или</div>
   <label class="file"><input id="file" type="file" accept="video/*,.mkv" hidden>Загрузить файл с устройства</label>
   <div class="cats">${CATS.map((c) => `
-    <label class="cat"><input type="checkbox" data-kind="${c.kind}" checked>
+    <label class="cat"><input type="checkbox" data-kind="${c.kind}"${savedKinds().has(c.kind) ? ' checked' : ''}>
       <span><i>${c.emoji}</i> ${c.title}<small>${c.hint}</small></span></label>`).join('')}
   </div>`;
   }

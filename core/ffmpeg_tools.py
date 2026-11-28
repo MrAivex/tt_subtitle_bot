@@ -99,6 +99,23 @@ class FFmpeg:
                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
                    "-c:a", "copy", str(dst)])
 
+    def compose_tiktok(self, src, dst):
+        """Раскладка «как в TikTok»: вебка стримера сверху, стрим снизу — 1080x1920.
+
+        Вебку ищем на видео автоматически (core.tiktok.detect_webcam_box); если её
+        нет — видео просто центрально обрезается в 9:16.
+        """
+        from core.tiktok import detect_webcam_box, tiktok_filters
+        w, h = self.resolution(src)
+        t = min(self.duration(src) * 0.15, 60.0)
+        box = detect_webcam_box(self.ffmpeg, str(src), w, h, t)
+        print(f"[TIKTOK] {src}: вебка={'не найдена — кроп 9:16' if not box else str(box)}",
+              flush=True)
+        self._run(["-i", str(src), "-filter_complex", tiktok_filters(box),
+                   "-map", "[v]", "-map", "0:a?",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2",
+                   "-c:a", "copy", str(dst)])
+
     def burn_ass(self, src, ass_path, fonts_dir, dst, crop_box=None):
         """Вжигает ASS-субтитры (и, если задан crop_box, сначала обрезает кадр)."""
         ass = Path(ass_path)

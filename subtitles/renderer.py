@@ -23,7 +23,8 @@ class SubtitleRenderer:
         self._breaker = breaker
         self._ass = ass
 
-    def render(self, src, *, premium: bool, vertical: bool) -> RenderResult:
+    def render(self, src, *, premium: bool, vertical: bool,
+               color: str = None, animated: bool = True) -> RenderResult:
         v = Path(src).resolve()
         out = v.with_name(f"{v.stem}_subtitled.mp4")
         wav = v.with_name(f"{v.stem}.wav")
@@ -38,7 +39,8 @@ class SubtitleRenderer:
 
             w, h, box = self._frame(v, vertical)          # размер кадра ПОСЛЕ обрезки
             lines = self._breaker.split(words, w, h)
-            ass_text = self._ass.build(lines, w, h, self._ff.duration(v), watermark=not premium)
+            ass_text = self._ass.build(lines, w, h, self._ff.duration(v),
+                                       watermark=not premium, color=color, animated=animated)
             ass_path.write_text(ass_text, encoding="utf-8")
 
             with timed("clip: рендер ffmpeg"):

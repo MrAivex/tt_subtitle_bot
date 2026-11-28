@@ -1,7 +1,9 @@
 # highlights/curves.py
-"""Кривые интереса по типам моментов: fight, funny, shock, win, absurd, hype.
+"""Кривые интереса по типам моментов: fight, funny, shock, win, absurd, hype, talk.
 
 Каждая кривая — массив float длины n (количество кадров).
+talk — плотность непрерывной речи (есть f0): по ней ищутся «разговорники» —
+длинные куски до 2 минут, где стример непрерывно что-то рассказывает.
 """
 import numpy as np
 
@@ -21,7 +23,8 @@ def _nz(x, lo, hi):
 
 
 def _smooth(c, w_mean=16, w_max=17):
-    """Плотность события за ~8 сек (среднее) + пик (максимум)."""
+    """Плотность события за ~8 сек (среднее) + пик (максимум). Окна настраиваются:
+    для talk — длиннее (32 кадра ≈ 16 с)."""
     k = np.ones(w_mean, np.float32) / w_mean
     mean = np.convolve(c, k, mode="same")[: len(c)]
     pad = w_max // 2
@@ -63,5 +66,13 @@ def build_curves(feats, g):
     else:
         fight, funny, win = fight_dsp, zero, zero
 
-    raw = dict(fight=fight, funny=funny, shock=shock, win=win, absurd=zero, hype=hype)
-    return {k: _smooth(v.astype(np.float32)) for k, v in raw.items()}
+    # разговорники: плотность речи — голос есть (f0 не NaN) и это не перестрелка
+    voiced = (~np.isnan(f0)).astype(np.float32)
+    talk = _smooth(voiced, 32, 33)
+    if g is not None:
+        talk = talk * (1.0 - 0.6 * _nz(np.maximum(gun, boom), 0.05, 0.5))
+
+    raw = dict(fight=fight, funny=funny, shock=shock, win=win, absurd=zero, hype=hype,
+               talk=talk)
+    return {k: _smooth(v.astype(np.float32)) if k != "talk" else v
+            for k, v in raw.items()}

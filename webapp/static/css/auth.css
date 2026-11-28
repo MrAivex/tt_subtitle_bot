@@ -1,0 +1,12 @@
+/* ---------- вход на сайте и привязка аккаунтов ---------- */
+input[type=text],input[type=password],input[type=tel]{width:100%;padding:14px 16px;border:3px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);
+  font:700 16px var(--f);margin-bottom:12px;box-shadow:3px 3px 0 var(--sh);outline:0}
+input[type=text]:focus,input[type=password]:focus,input[type=tel]:focus{border-color:var(--pink);box-shadow:3px 3px 0 var(--pink)}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{margin:0;padding:10px 8px;flex:1;font-size:14px;box-shadow:0 4px 0 var(--sh)}
+.tabs button.on{background:var(--lav);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+.hint{color:var(--mute);font-size:13.5px;font-weight:700;margin:10px 0 0}
+.code-big{font:900 34px/1 var(--h);letter-spacing:8px;text-align:center;background:var(--hl);
+  border:3px solid var(--line);border-radius:18px;padding:14px 0;margin:10px 0;user-select:all}
+.pill{display:inline-block;margin:3px 4px 3px 0;padding:4px 12px;background:var(--card);
+  border:2.5px solid var(--line);border-radius:999px;font:800 13px var(--h)}

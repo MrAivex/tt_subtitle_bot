@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Хайлайты</title>
+<!-- SDK мессенджеров — свой компактный адаптер /static/vendor/miniapp-sdk.js.
+     Раньше SDK грузились с telegram.org и st.max.ru: там, где эти домены
+     недоступны, страница висела белой ~10 секунд, а window.Telegram не
+     появлялся — приложение считало, что его открыли из браузера, и требовало
+     регистрацию. Локальный адаптер даёт initData/ready/expand/openLink всегда
+     и без сети. Вне вебвью он безвреден: initData пуст, события некуда
+     отправлять. Порядок исполнения — до main.js (defer сохраняет порядок). -->
+<script defer src="/static/vendor/miniapp-sdk.js"></script>
+<!-- Шрифты Google (Nunito/Rubik) — НЕ блокируют отрисовку: если fonts.googleapis.com
+     доступен, шрифты догрузятся и подменят системные; если домен недоступен —
+     страница остаётся на system-ui без белого экрана и задержек.
+     Сделать шрифты офлайн (к примеру, если Google недоступен): python3 webapp/fetch_fonts.py -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&family=Rubik:wght@600;800;900&display=swap"></noscript>
+<!-- Порядок важен: это тот же порядок правил, что был в одном <style>. -->
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/mascot.css">
+<link rel="stylesheet" href="/static/css/text.css">
+<link rel="stylesheet" href="/static/css/controls.css">
+<link rel="stylesheet" href="/static/css/cards.css">
+<link rel="stylesheet" href="/static/css/nav.css">
+<link rel="stylesheet" href="/static/css/player.css">
+<link rel="stylesheet" href="/static/css/gallery.css">
+<link rel="stylesheet" href="/static/css/actionbar.css">
+<link rel="stylesheet" href="/static/css/a11y.css">
+<link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+<span class="sp">✦</span><span class="sp">♡</span><span class="sp">✧</span><span class="sp">✦</span><span class="sp">♡</span>
+<main id="v"></main>
+<div id="actbar" hidden><button class="pri" id="big"></button></div>
+<div id="toast" role="status"></div>
+<nav hidden><button data-t="home" class="on">🎬 Видео</button><button data-t="profile">💖 Профиль</button></nav>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

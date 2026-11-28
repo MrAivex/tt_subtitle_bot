@@ -1,0 +1,20 @@
+:root{
+  --bg:#fff3f8;--dot:#ffd0e4;--card:#fff;--ink:#2a1f45;--mute:#7a6c9a;--line:#2a1f45;--sh:#2a1f45;
+  --pink:#ff5fa2;--lav:#8b7bff;--sun:#ffd23f;--hl:#fff0a8;
+  --k-fight:#ff5a6e;--k-funny:#ffd23f;--k-shock:#9b87ff;--k-win:#ffa94d;--k-absurd:#3ddc97;--k-hype:#ff8fc8;--k-talk:#38c6f4;
+  --f:'Nunito',system-ui,sans-serif;--h:'Rubik','Nunito',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1a1430;--dot:#2c2250;--card:#2a2147;--ink:#f6edff;--mute:#b6a9d9;--line:#8f80ee;--sh:#0a0716;--hl:#5b3d8f}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;color:var(--ink);font:600 16px/1.45 var(--f)}
+body{background:var(--bg);background-image:radial-gradient(var(--dot) 1.3px,transparent 1.7px);background-size:15px 15px;
+  min-height:100vh;padding:env(safe-area-inset-top,0) 16px calc(104px + env(safe-area-inset-bottom,0))}
+body.hasact{padding-bottom:calc(176px + env(safe-area-inset-bottom,0))}
+main{position:relative;z-index:1;max-width:520px;margin:0 auto;padding-top:18px}
+
+/* декор: мерцающие искорки */
+.sp{position:fixed;z-index:0;pointer-events:none;color:var(--pink);font-size:18px;opacity:.55;animation:tw 3.2s ease-in-out infinite}
+.sp:nth-of-type(1){top:9%;left:6%}.sp:nth-of-type(2){top:22%;right:7%;color:var(--lav);animation-delay:.8s}
+.sp:nth-of-type(3){top:46%;left:3%;color:var(--sun);animation-delay:1.6s}.sp:nth-of-type(4){top:63%;right:4%;animation-delay:2.2s}
+.sp:nth-of-type(5){top:80%;left:8%;color:var(--lav);animation-delay:1.1s}
+@keyframes tw{0%,100%{transform:scale(.7) rotate(0);opacity:.2}50%{transform:scale(1.2) rotate(20deg);opacity:.75}}

@@ -1,0 +1,30 @@
+input[type=url],input[type=email]{width:100%;padding:14px 16px;border:3px solid var(--line);border-radius:18px;background:var(--card);color:var(--ink);
+  font:700 16px var(--f);margin-bottom:12px;box-shadow:3px 3px 0 var(--sh);outline:0}
+input::placeholder{color:var(--mute);font-weight:600}
+input[type=url]:focus,input[type=email]:focus{border-color:var(--pink);box-shadow:3px 3px 0 var(--pink)}
+button,.file{display:block;width:100%;padding:13px 16px;border:3px solid var(--line);border-radius:999px;font:800 16px var(--h);cursor:pointer;
+  text-align:center;margin-top:12px;color:var(--ink);background:var(--card);box-shadow:0 5px 0 var(--sh);transition:transform .08s,box-shadow .08s}
+button:active,.file:active{transform:translateY(4px);box-shadow:0 1px 0 var(--sh)}
+button.pri{background:var(--pink);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+button:disabled{opacity:.5;box-shadow:none;transform:translateY(4px);cursor:default}
+:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+.file{border-style:dashed;border-color:var(--lav);box-shadow:none;background:transparent;color:var(--lav)}
+.file:active{transform:scale(.98);box-shadow:none}
+.or{text-align:center;color:var(--mute);margin:18px 0 4px;font-weight:800}
+.or::before{content:"✦ ";color:var(--pink)}.or::after{content:" ✦";color:var(--pink)}
+
+.bar{height:22px;background:var(--card);border:3px solid var(--line);border-radius:999px;overflow:hidden;margin:16px 0 8px;box-shadow:3px 3px 0 var(--sh)}
+.bar i{display:block;height:100%;border-radius:999px;transition:width .3s;
+  background:repeating-linear-gradient(-45deg,var(--pink) 0 10px,#ff8cc0 10px 20px);background-size:28px 28px;animation:stripes .8s linear infinite}
+@keyframes stripes{to{background-position:28px 0}}
+.bar i.ind{width:35%!important;animation:stripes .8s linear infinite,sl 1.2s ease-in-out infinite alternate}
+@keyframes sl{to{margin-left:65%}}
+
+/* ---- типы моментов на стартовом экране ---- */
+.cats{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.cat{flex:1 1 30%;display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:3px solid var(--line);
+  border-radius:16px;background:var(--card);font:800 13px var(--h);color:var(--ink);cursor:pointer;user-select:none}
+.cat input{accent-color:var(--pink);width:19px;height:19px;margin:1px 0 0;flex:0 0 auto}
+.cat span{min-width:0}
+.cat i{font-style:normal;font-size:15px}
+.cat small{display:block;color:var(--mute);font:700 11px var(--f);margin-top:2px}

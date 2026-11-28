@@ -41,7 +41,9 @@ class Job:
     eta: float = 0.0          # оценка поиска моментов, сек
     eta_ts: float = 0.0
     task: object = None
-    cancelled: bool = False    
+    cancelled: bool = False
+    platform: str = ""        # max / tg / site — откуда запущена задача (для доставки файлов)
+    kinds: list = field(default_factory=list)   # выбранные типы моментов (fight/funny/talk); пусто = авто
 
     @property
     def title(self) -> str:
@@ -71,7 +73,7 @@ class Job:
             "error": self.error, "duration": self.duration, "moments": self.moments,
             "previews": self.previews, "previews_status": self.previews_status,
             "title": self.title, "eta_left": eta_left, "eta_over": eta_over,
-            "renders": renders, "media_token": media_token,
+            "renders": renders, "media_token": media_token, "kinds": self.kinds or [],
         }
 
     def cleanup(self):

@@ -1,0 +1,14 @@
+.opts{display:flex;gap:10px;margin:16px 0 4px;flex-wrap:wrap}
+.opts button{margin:0;padding:11px 8px;flex:1 1 40%;font-size:14px;box-shadow:0 4px 0 var(--sh)}
+.opts button.on{background:var(--lav);color:#fff;text-shadow:0 2px 0 rgba(42,31,69,.35)}
+/* свотч выбранного цвета плашки внутри кнопки «Цвет» */
+.sw{display:inline-block;width:15px;height:15px;border-radius:5px;border:2.5px solid var(--line);vertical-align:-2px;margin-left:6px}
+/* заголовок группы моментов в галерее */
+.ghead{grid-column:1/-1;margin:12px 0 -4px;font:900 14px var(--h);color:var(--ink)}
+.ghead span{color:var(--mute);font:800 12px var(--f)}
+.card{background:var(--card);border:3px solid var(--line);border-radius:22px;padding:16px;margin-bottom:16px;box-shadow:4px 4px 0 var(--sh)}
+.card b{font:900 17px var(--h)}.card p{margin:4px 0 0;color:var(--mute);font-weight:700}
+.card.sub-card b::before{content:"✦ ";color:var(--pink)}
+.err{color:#e23a63}
+.spin{width:16px;height:16px;border:3px solid var(--line);border-top-color:var(--pink);border-radius:50%;animation:rot .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:6px}
+@keyframes rot{to{transform:rotate(360deg)}}

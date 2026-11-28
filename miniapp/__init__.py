@@ -55,4 +55,19 @@ def register_miniapp(app: web.Application, *, ffmpeg, analyzer, renderer, downlo
     app.router.add_get("/app/", index)
     if STATIC_DIR.exists():
         app.router.add_static("/static", STATIC_DIR)
+
+
+        # статику без Cache-Control вебвью кэшируют без перепроверки — старый
+    # интерфейс живёт и после деплоя; заставляем переспрашивать (304, если
+    # файл не менялся), обновления доезжают со следующим открытием страницы
+    @web.middleware
+    async def _revalidate_static(request, handler):
+        resp = await handler(request)
+        if request.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+        return resp
+
+    app.middlewares.append(_revalidate_static)
+
+
     print(f"[MINIAPP] index.html: {INDEX_PATH} exists={INDEX_PATH.exists()}", flush=True)

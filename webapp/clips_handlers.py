@@ -133,7 +133,7 @@ class WebClipsHandlers:
         return web.json_response(self._pub(job))
 
     async def active(self, request):
-        job = self._jobs.latest_for(request["uid"]
+        job = self._jobs.latest_for(request["uid"])
         if job and job.status == "error":
             if job.seen:
                 job = None
@@ -200,7 +200,7 @@ class WebClipsHandlers:
 
     async def download(self, request):
         job = self._job(request)
-        idx = int(request.match_info["idx"]
+        idx = int(request.match_info["idx"])
         r = job.renders.get(idx)
         if not r or r["status"] != "ready" or not os.path.exists(r.get("path", "")):
             raise ApiError("Файл ещё не готов", 404)

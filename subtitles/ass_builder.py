@@ -135,10 +135,10 @@ class AssBuilder:
             f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,{box_color},&H00000000,",
             f"{b},0,0,0,100,100,0,0,3,{L.pad},0,2,10,10,{L.margin_v},1",
             # Текст: белый с чёрной обводкой
-            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,",
+            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,2,10,10,{L.margin_v},1",
             # Водяной знак: слева внизу, ~60% непрозрачности
-            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,",
+            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,"
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,1,20,20,20,1",
             "",
             "[Events]",

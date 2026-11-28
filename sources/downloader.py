@@ -80,7 +80,11 @@ def _retry_fragments(fn, stem, *args):
     try:
         return fn(*args)
     except yt_dlp.utils.DownloadError as e:
-        if "fragment" not in str(e).lower():
+        # Смотрим на «frag»: покрывает и слово fragment, и реальные тексты вида
+        # «[Errno 2] Нет такого файла …xxx.part-Frag5» (yt-dlp при падении фрагмента
+        # кидает FileNotFoundError по имени куска — слова «fragment» в нём нет,
+        # поэтому раньше такой сбой не попадал в безопасный повтор).
+        if "frag" not in str(e).lower():
             raise
         logger.warning(f"[LINK] ошибка фрагментов, повторяю через ffmpeg: {str(e)[:150]}")
         for p in glob.glob(glob.escape(stem) + "*"):
@@ -136,7 +140,7 @@ def _ytdlp_download_sync(url: str, output_path: str, safe: bool = False) -> str:
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
-        "fragment_retries": 3,
+        "fragment_retries": 10,
         "max_filesize": MAX_FILE_SIZE_BYTES,
         "concurrent_fragment_downloads": FRAG_CONC,
         "progress_hooks": [_progress_hook_factory("video")],
@@ -231,6 +235,7 @@ def _ytdlp_audio_sync(url: str, stem: str, safe: bool = False) -> str:
         "format": "worstaudio/bestaudio[abr<=96]/bestaudio",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
+        "fragment_retries": 10,
         "concurrent_fragment_downloads": FRAG_CONC,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},
         "progress_hooks": [_progress_hook_factory("audio", url, stem)],
@@ -288,6 +293,7 @@ def _ytdlp_section_sync(url: str, start: float, end: float, stem: str, max_heigh
         "merge_output_format": "mp4",
         "noplaylist": True, "quiet": True, "no_warnings": True,
         "socket_timeout": 15, "retries": 3,
+        "fragment_retries": 10,
         "download_ranges": download_range_func([], [(start, end)]),
         "concurrent_fragment_downloads": FRAG_CONC,
         "external_downloader_args": {"ffmpeg": ["-nostats", "-loglevel", "error"]},

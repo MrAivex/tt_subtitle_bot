@@ -22,6 +22,10 @@ STATIC_FADE_IN = 0.15 # статичный режим: проявление ст
 DEFAULT_BOX_COLOR = "#9D4EDD"      # фиолетовая, как всегда
 _HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
 
+# расположение субтитров (pos): якорь ASS и y-координата строки
+#   bottom — низ по центру (an2), middle — центр кадра (an5), top — верх по центру (an8)
+VALID_POS = ("bottom", "middle", "top")
+
 
 def ass_box_color(hex_color: str) -> str:
     """'#RRGGBB' → '&H00BBGGRR'. ASS хранит цвета BGR с альфой впереди."""
@@ -67,6 +71,7 @@ class _Layout:
     wm_fs: int
     cx: float
     cy: float
+    an: int                # якорь ASS: 2 низ / 5 центр / 8 верх
     off: tuple          # смещение вниз в узлах кривой вылета
 
 
@@ -80,8 +85,9 @@ class AssBuilder:
 
     # ---------- публичный API ----------
     def build(self, lines: List, video_w: int, video_h: int, duration: float,
-              watermark: bool, color: str = None, animated: bool = True) -> str:
-        lay = self._layout(video_w, video_h)
+              watermark: bool, color: str = None, animated: bool = True,
+              pos: str = "bottom") -> str:
+        lay = self._layout(video_w, video_h, pos)
         out = self._header(lay, ass_box_color(color or DEFAULT_BOX_COLOR))
         for li, line in enumerate(lines):
             nxt = lines[li + 1] if li + 1 < len(lines) else None
@@ -92,10 +98,13 @@ class AssBuilder:
         return "\n".join(out) + "\n"
 
     # ---------- части ----------
-    def _layout(self, w: int, h: int) -> _Layout:
+    def _layout(self, w: int, h: int, pos: str = "bottom") -> _Layout:
         fs = self.font.size_for(w, h)
         family, bold = self.font.describe(fs)
-        margin_v = max(40, round(h * 0.07))                 # отступ снизу
+        margin_v = max(40, round(h * 0.07))                 # отступ от края (снизу или сверху)
+        an, cy = {"bottom": (2, h - margin_v),
+                  "middle": (5, h / 2),
+                  "top": (8, margin_v)}[pos if pos in VALID_POS else "bottom"]
         rise = fs * RISE_K
         return _Layout(
             w=w, h=h, family=family, bold=-1 if bold else 0, fs=fs,
@@ -103,7 +112,7 @@ class AssBuilder:
             pad=max(4, round(fs * 0.16)),                   # «поля» плашки вокруг слова
             margin_v=margin_v,
             wm_fs=max(14, round(fs * 0.78)),
-            cx=w / 2, cy=h - margin_v,                      # якорь строки: низ по центру
+            cx=w / 2, cy=cy, an=an,                         # якорь строки: по центру
             off=tuple(rise * (1 - _ease_out(p)) for p in self._nodes),
         )
 
@@ -126,10 +135,10 @@ class AssBuilder:
             f"Style: Box,{L.family},{L.fs},&HFFFFFFFF,&HFFFFFFFF,{box_color},&H00000000,",
             f"{b},0,0,0,100,100,0,0,3,{L.pad},0,2,10,10,{L.margin_v},1",
             # Текст: белый с чёрной обводкой
-            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            f"Style: Text,{L.family},{L.fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,",
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,2,10,10,{L.margin_v},1",
             # Водяной знак: слева внизу, ~60% непрозрачности
-            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,"
+            f"Style: Mark,{L.family},{L.wm_fs},&H66FFFFFF,&H66FFFFFF,&H66000000,&H00000000,",
             f"{b},0,0,0,100,100,0,0,1,{L.stroke},0,1,20,20,20,1",
             "",
             "[Events]",
@@ -149,7 +158,7 @@ class AssBuilder:
             e = min(t0 + self._nodes[k + 1] * anim, t_stop)
             if e - s < 0.005:
                 continue
-            move = (f"{{\\an2\\move({L.cx:.1f},{L.cy + L.off[k]:.1f},"
+            move = (f"{{\\an{L.an}\\move({L.cx:.1f},{L.cy + L.off[k]:.1f},"
                     f"{L.cx:.1f},{L.cy + L.off[k + 1]:.1f})}}")
             out.append(f"Dialogue: {layer},{_ass_time(s)},{_ass_time(e)},{style},,0,0,0,,"
                        f"{move}{text_for(self._alp[k], self._alp[k + 1])}")
@@ -203,7 +212,7 @@ class AssBuilder:
         words = [_ass_escape(w.word) for w in ws]
         t, _an, line_end = self._timing(line, next_line)
         start = t[0]
-        pos = f"{{\\an2\\pos({L.cx:.1f},{L.cy:.1f})}}"
+        pos = f"{{\\an{L.an}\\pos({L.cx:.1f},{L.cy:.1f})}}"
         fad = f"{{\\fad({int(STATIC_FADE_IN * 1000)},{int(LINE_FADE_OUT * 1000)})}}"
         text = " ".join(words)
         if line_end - start < 0.05:                 # защита от мгновенных строк
@@ -218,7 +227,7 @@ class AssBuilder:
         n = len(ws)
         words = [_ass_escape(w.word) for w in ws]
         t, an, line_end = self._timing(line, next_line)
-        pos = f"{{\\an2\\pos({L.cx:.1f},{L.cy:.1f})}}"
+        pos = f"{{\\an{L.an}\\pos({L.cx:.1f},{L.cy:.1f})}}"
 
         out: List[str] = []
         for i in range(n):
